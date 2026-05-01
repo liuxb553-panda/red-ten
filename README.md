@@ -1,0 +1,252 @@
+# Red Ten Poker (红十扑克牌)
+
+A 6-player Chinese card game with three levels of AI, a web UI, and a self-play training pipeline.
+
+---
+
+## What is Red Ten Poker?
+
+红十 (Red Ten) is a trick-taking card game played with two standard decks (108 cards total). Six players split into two teams of three. The goal is for your team to accumulate points by winning tricks that contain scoring cards (5s, 10s, Kings, and the special Red Tens). The Red Ten (红十, the 10 of Hearts or Diamonds) is the most powerful card in the game.
+
+Players: 6 (teams of 3 — alternating seats, so P0/P2/P4 vs P1/P3/P5)
+Cards: 2 decks, 108 cards total
+Scoring cards: 5=5pts, 10=10pts, K=10pts, Red Ten=10pts (special)
+Win condition: outscore the opposing team in each hand
+
+---
+
+## The Three AI Tiers
+
+This project has three levels of AI, each building on the last:
+
+### Tier 1: Rule-Based Player (`rule`)
+Simple heuristics — plays high cards when leading, follows suit, avoids giving away scoring cards. Fast and predictable. Good baseline.
+
+### Tier 2: Search Player (`search`)
+Smarter — before each move, it imagines 12 possible "worlds" (guesses about what cards opponents hold), simulates the outcome of each legal move in each world, and picks the move that scores best on average. This is called **determinized search** (or "Monte Carlo" sampling). Beats the Rule player roughly 50% of the time.
+
+### Tier 3: ML Player (`ml`)
+A small neural network (4 layers: 65→128→64→32→1) trained via **self-play**. It uses the same search loop as Tier 2, but replaces the hand-coded evaluation function with the learned network. Trained entirely by playing games against itself and the Search player.
+
+---
+
+## Project Structure
+
+```
+red-ten/
+├── src/
+│   ├── cards.py          # Card, Rank, Suit definitions
+│   ├── moves.py          # Legal move types (singles, pairs, bombs, …)
+│   ├── state.py          # GameState, scoring, team assignment
+│   ├── hand.py           # One hand of play (deal → tricks → result)
+│   ├── session.py        # Multi-hand session, make_players() helper
+│   ├── rule_player.py    # Tier 1: heuristic AI
+│   ├── search_player.py  # Tier 2: determinized 1-step lookahead
+│   ├── features.py       # 65 features extracted per candidate move
+│   ├── ml_player.py      # Tier 3: neural network player
+│   ├── collect_data.py   # Generate training data (self-play games)
+│   ├── train_model.py    # Train the MLP on collected data
+│   ├── train_selfplay.py # Full self-play loop (collect → train → benchmark)
+│   ├── benchmark.py      # Compare two AI tiers head-to-head
+│   ├── web_server.py     # Flask server (game UI + training dashboard)
+│   └── gui.py            # pygame desktop UI
+├── web/
+│   ├── index.html        # Game viewer (web UI)
+│   └── dashboard.html    # Training dashboard
+├── data/
+│   ├── model.pt          # Current best ML model
+│   ├── model_r{N}.pt     # Checkpoint from self-play round N
+│   ├── sp_r{N}.npz       # Self-play training data from round N
+│   └── eval_labels.npz   # Bootstrap data (SearchPlayer distillation)
+└── README.md
+```
+
+---
+
+## Quickstart
+
+### Prerequisites
+```bash
+cd /Users/henryliu/dev/red-ten
+source .venv/bin/activate   # or: conda activate your-env
+pip install flask torch numpy
+```
+
+### Watch AI games in the browser
+
+```bash
+python src/web_server.py
+# Open http://localhost:5173
+```
+
+Choose an AI tier in the config dialog:
+- **rule** — all six players use Tier 1 (Rule-Based)
+- **search** — all six use Tier 2 (Search)
+- **ml** — all six use the trained ML model
+- **ml-vs-rule** — ML team vs Rule team (benchmark mode)
+- **ml-vs-search** — ML team vs Search team
+
+### Run a benchmark (command line)
+
+```bash
+# ML vs Rule, 80 games
+python src/benchmark.py --tier ml-vs-rule --n 80
+
+# ML vs Search, 80 games
+python src/benchmark.py --tier ml-vs-search --n 80
+
+# Search vs Rule (baseline reference)
+python src/benchmark.py --tier mixed --n 80
+
+# Use a specific checkpoint
+python src/benchmark.py --tier ml-vs-rule --model data/model_r6.pt --n 80
+```
+
+Output looks like:
+```
+Benchmarking: ml-vs-rule  N=80  seed=77  workers=8
+  ML         wins:  46  RULE       wins:  31  Ties:   3  (57.5%)
+  Time: 38.2s  (0.5s/hand)
+```
+
+---
+
+## Training the ML Model
+
+Training happens in three stages. You normally only need **Stage 3** unless starting from scratch.
+
+### Stage 1: Bootstrap data (one-time, already done)
+
+Generate 1000 games where every candidate move is evaluated by the Search player. This gives the ML model a starting point.
+
+```bash
+python src/collect_data.py --games 1000 --out data/eval_labels.npz --mode eval
+```
+
+This takes ~30 minutes and produces `data/eval_labels.npz` (~3.6M samples).
+
+### Stage 2: Train initial model (one-time, already done)
+
+```bash
+python src/train_model.py --data data/eval_labels.npz --out data/model.pt --epochs 50
+```
+
+The model learns to approximate what the Search player considers a "good position." After this, ML plays at roughly Search-player level (~49% vs Rule).
+
+### Stage 3: Self-play loop (iterative improvement)
+
+This is the main training loop. Each round:
+1. Play 500 games: ML (with some random exploration) vs Search opponents
+2. Label each decision with **advantage** = how much better this move was vs the alternatives
+3. Retrain the neural network from scratch on all data collected so far
+4. Benchmark the new model vs Rule and vs Search
+5. Save the checkpoint, repeat
+
+```bash
+# Recommended: advantage labels, vs Search opponents (currently running)
+python src/train_selfplay.py \
+  --rounds 10 --games 500 --workers 8 \
+  --label-mode advantage --opponent search \
+  --start-model data/model.pt
+
+# Resume from a specific checkpoint
+python src/train_selfplay.py \
+  --start-model data/model_r6.pt --start-round 7 \
+  --rounds 5 --label-mode advantage --opponent search
+
+# Quick smoke test (2 rounds, 20 games, 5 epochs)
+python src/train_selfplay.py \
+  --rounds 2 --games 20 --bench-n 10 --epochs 5 \
+  --label-mode advantage --opponent search
+```
+
+Key flags:
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--rounds` | 10 | How many self-play rounds to run |
+| `--games` | 500 | Games per round (more = better signal, slower) |
+| `--workers` | 8 | Parallel CPU workers |
+| `--keep` | 4 | How many rounds of data to keep in replay buffer |
+| `--epochs` | 60 | Max training epochs per round |
+| `--label-mode` | advantage | `advantage` = relative move quality; `outcome` = game result |
+| `--opponent` | search | Who plays against ML: `rule` or `search` |
+| `--eps-start` | 0.4 | Starting random-move probability (exploration) |
+| `--eps-end` | 0.1 | Final random-move probability |
+
+### Watch training progress
+
+Open the training dashboard:
+```
+http://localhost:5173/dashboard
+```
+
+Or tail the log directly:
+```bash
+tail -f /tmp/selfplay_adv_search.log
+```
+
+---
+
+## Understanding the Results
+
+### Win rate numbers
+
+- **vs Rule**: ML team score vs Rule team score across N games. 50% = tied with Rule. Previous best: 57.5%.
+- **vs Search**: ML team vs Search team. 50% = tied with Search (good!). SearchPlayer itself only gets ~49% vs Rule.
+- **N=40** benchmarks during training are noisy (±8%). Results crossing 60% vs Search are meaningful.
+
+### Why vs-Rule and vs-Search diverge
+
+The ML model trained with `--opponent search` learns to beat *Search-style* play (careful, lookahead-based). RuleBasedPlayer plays very differently (aggressive, simple heuristics), so the model can win against Search but struggle against Rule's unpredictable style. This is a known tradeoff.
+
+### What "advantage labels" means
+
+Instead of labeling moves by whether the team won the whole game (noisy — one bad hand shouldn't penalize every decision), we label each move by how much better it was compared to all other legal moves at that moment. Score = `evaluate(this_move) − average(evaluate(all_moves))`. This is zero on average and focuses the model on *relative move quality*, not luck.
+
+### The replay buffer
+
+Training always uses the last `--keep` rounds of data (default: 4 rounds). Older data cycles out. This prevents the model from over-fitting to early, poor-quality games. The eval bootstrap data (`eval_labels.npz`) is seeded into the buffer at round 1 and cycles out after 4 rounds.
+
+---
+
+## Results So Far
+
+### Previous run (outcome labels, vs Rule opponents — 8 rounds)
+Best checkpoint: `data/model_r6.pt` — **57.5% vs Rule**, 45% vs Search.
+The model learned to exploit Rule's weaknesses but couldn't beat Search.
+
+### Current run (advantage labels, vs Search opponents — 10 rounds)
+| Round | vs Rule | vs Search |
+|-------|---------|-----------|
+| 1 | 47.5% | 52.5% |
+| 2 | 40.0% | 45.0% |
+| 3 | 47.5% | **65.0%** |
+| 4 | 40.0% | 55.0% |
+| 5 | **55.0%** | **60.0%** |
+| 6 | 52.5% | 45.0% |
+| 7 | 37.5% | **60.0%** |
+
+vs-Search average ~56% — consistently beating SearchPlayer. The new training approach works.
+
+---
+
+## Data Files
+
+| File | Size | What it contains |
+|------|------|-----------------|
+| `data/eval_labels.npz` | 50 MB | 3.6M samples: features + SearchPlayer eval score per candidate move, from 1000 Rule-vs-Rule games. Used to bootstrap training. |
+| `data/sp_r{N}.npz` | 4–5 MB | ~160k samples from one round of self-play (500 games, advantage labels). |
+| `data/model.pt` | 79 KB | Current active model (updated each round). |
+| `data/model_r{N}.pt` | 79 KB | Frozen checkpoint from round N. |
+
+---
+
+## Troubleshooting
+
+**"No module named torch"** — activate your virtual environment first.
+
+**ML player is slow** — it runs on CPU by default (MPS/GPU overhead is too high for tiny batch sizes). Expect ~2–6 seconds per hand.
+
+**Benchmark results are noisy** — N=40 has ±8% statistical error. Use N=80–200 for reliable comparison.
+
+**Training crashed mid-run** — resume with `--start-model data/model_r{last}.pt --start-round {last+1}`.

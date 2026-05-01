@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Ten Poker 红十 — Play</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #165a23;
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", Arial, sans-serif;
+  color: #e1e4d7; }
+
+/* ── Screens ─────────────────────────────────────────────────────────────── */
+.screen { display: none; height: 100vh; align-items: center; justify-content: center; }
+.screen.active { display: flex; }
+
+/* ── Cards / common ─────────────────────────────────────────────────────── */
+.card { display: inline-block; width: 36px; height: 52px; border-radius: 4px;
+  background: #fffce2; border: 1px solid #888; position: relative; flex-shrink: 0;
+  margin-left: -18px; font-size: 11px; vertical-align: bottom; overflow: hidden;
+  cursor: default; }
+.card:first-child { margin-left: 0; }
+.card .cr { position: absolute; top: 2px; left: 3px; font-weight: bold;
+  line-height: 1; color: #121212; }
+.card .cs { position: absolute; top: 13px; left: 3px; line-height: 1; color: #121212; }
+.card.red-suit .cr, .card.red-suit .cs { color: #c30a0a; }
+.card.red-ten  { background: #ffd200; }
+.card.red-ten .cr, .card.red-ten .cs { color: #8c2d00; }
+.card.red-ten .cstar { position: absolute; bottom: 2px; right: 2px;
+  font-size: 9px; color: #8c2d00; }
+.card.big-joker   { background: #7337c3; }
+.card.small-joker { background: #cd96eb; }
+.card.big-joker .cj, .card.small-joker .cj { position: absolute; top: 50%;
+  left: 50%; transform: translate(-50%, -50%); font-size: 9px; color: #fff;
+  text-align: center; line-height: 1.3; white-space: nowrap; }
+.card.back { background: #1a4a28; border-color: #3a7a44; cursor: default; }
+.card.selectable { cursor: pointer; transition: transform .1s; }
+.card.selectable:hover { transform: translateY(-6px); }
+.card.selected { transform: translateY(-10px); outline: 2px solid #ffe42d; }
+.card.scoring { box-shadow: 0 0 5px 2px rgba(255,220,60,0.55); }
+
+/* ── Lobby screen ────────────────────────────────────────────────────────── */
+#lobby-box { background: #0c2c14; border: 2px solid #ffe42d; border-radius: 12px;
+  padding: 32px 40px; min-width: 320px; }
+#lobby-box h1 { font-size: 22px; color: #ffe42d; text-align: center; margin-bottom: 24px; }
+.lfield { margin-bottom: 16px; }
+.lfield label { display: block; font-size: 12px; color: #829672; margin-bottom: 4px; }
+.lfield input, .lfield select { width: 100%; background: #162c1c; border: 1px solid #3a6a44;
+  border-radius: 5px; color: #e1e4d7; padding: 7px 10px; font-size: 13px; }
+.lbtn { width: 100%; background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; margin-bottom: 10px; }
+.lbtn:hover { background: #3a7a48; }
+.lbtn.secondary { border-color: #3a6a44; color: #829672; font-size: 13px; padding: 8px; }
+.lbtn.secondary:hover { background: #1e4a28; color: #e1e4d7; }
+#lobby-err { color: #e06060; font-size: 12px; text-align: center; min-height: 18px; margin-top: 6px; }
+#join-row { display: flex; gap: 8px; }
+#join-row input { flex: 1; text-transform: uppercase; letter-spacing: .12em; font-size: 16px; }
+#join-row button { background: #285a34; border: 1px solid #3a6a44; border-radius: 5px;
+  color: #e1e4d7; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+#join-row button:hover { background: #3a7a48; }
+
+/* ── Room/waiting screen ─────────────────────────────────────────────────── */
+#room-box { background: #0c2c14; border: 2px solid #2d6e37; border-radius: 12px;
+  padding: 28px 36px; min-width: 360px; max-width: 480px; width: 90vw; }
+#room-box h2 { font-size: 16px; color: #e1e4d7; text-align: center; margin-bottom: 18px; }
+#room-code-display { font-size: 36px; font-weight: bold; color: #ffe42d;
+  text-align: center; letter-spacing: .2em; margin-bottom: 6px; }
+#room-share { font-size: 11px; color: #829672; text-align: center; margin-bottom: 18px; }
+#seat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+.seat-slot { background: #162c1c; border: 1px solid #3a6a44; border-radius: 6px;
+  padding: 10px 8px; text-align: center; cursor: pointer; transition: border-color .15s; }
+.seat-slot:hover { border-color: #ffe42d; }
+.seat-slot.mine { border-color: #ffe42d; background: #1e3c24; }
+.seat-slot.taken { border-color: #589bdc; background: #162c1c; cursor: default; }
+.seat-slot.ai { border-color: #3a6a44; color: #829672; }
+.seat-slot .slot-label { font-size: 11px; color: #829672; }
+.seat-slot .slot-status { font-size: 12px; margin-top: 3px; }
+#start-btn { width: 100%; background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; }
+#start-btn:hover { background: #3a7a48; }
+#start-btn:disabled { opacity: 0.4; cursor: default; }
+#room-status-msg { font-size: 12px; color: #829672; text-align: center; margin-top: 10px; }
+
+/* ── Game screen ─────────────────────────────────────────────────────────── */
+#game-screen { flex-direction: column; align-items: stretch; justify-content: stretch;
+  height: 100vh; display: none; }
+#game-screen.active { display: grid;
+  grid-template: "gmain gpanel" 1fr "ghand ghand" auto / 1fr 260px; }
+
+#gmain  { grid-area: gmain;  position: relative; background: #105a1a; overflow: hidden; }
+#gpanel { grid-area: gpanel; background: #0c2c14; border-left: 2px solid #2d6e37;
+  display: flex; flex-direction: column; padding: 10px 10px 6px; overflow: hidden; }
+#gpanel h2 { font-size: 14px; text-align: center; color: #e1e4d7;
+  border-bottom: 1px solid #2d6e37; padding-bottom: 6px; margin-bottom: 6px; }
+#g-score-table { font-size: 12px; font-family: monospace; line-height: 1.7; }
+#g-score-table .row { display: flex; justify-content: space-between; }
+#g-score-table .pname { min-width: 90px; }
+#g-score-table .pts { text-align: right; min-width: 40px; }
+#gevlog-label { font-size: 10px; color: #829672; margin-top: 8px; margin-bottom: 3px; }
+#gevlog { flex: 1; overflow: hidden; font-size: 10.5px; font-family: monospace; line-height: 1.55; }
+#gevlog .ev { color: #829672; }
+#gevlog .ev.cur { color: #ffe42d; }
+
+/* ── Action bar ──────────────────────────────────────────────────────────── */
+#ghand { grid-area: ghand; background: #0c2414; border-top: 2px solid #2d6e37;
+  padding: 8px 16px; min-height: 48px; display: flex; align-items: center; gap: 10px; }
+#ghand-actions { display: flex; align-items: center; gap: 10px; width: 100%; }
+#turn-msg { font-size: 12px; color: #829672; flex: 1; }
+.abtn { background: #285a34; border: 1px solid #468850; border-radius: 6px;
+  color: #e1e4d7; font-size: 13px; padding: 7px 18px; cursor: pointer;
+  white-space: nowrap; }
+.abtn:hover:not(:disabled) { background: #3c7e48; }
+.abtn:disabled { opacity: 0.30; cursor: default; }
+.abtn.pass-btn { border-color: #829672; color: #829672; }
+.abtn.play-btn { border-color: #ffe42d; color: #ffe42d; font-weight: bold; }
+
+/* ── Seat boxes on table ─────────────────────────────────────────────────── */
+.gseat { position: absolute; transform: translate(-50%, -50%);
+  background: #122a18; border: 2px solid #556; border-radius: 8px;
+  padding: 5px 7px 4px; min-width: 140px; }
+.gseat.anchor-left  { transform: translate(0,    -50%); }
+.gseat.anchor-right { transform: translate(-100%, -50%); }
+.gseat.leader  { border-color: #ffe42d; }
+.gseat.red     { border-color: #dc4848; }
+.gseat.nonred  { border-color: #589bdc; }
+.gseat.mine    { border-color: #4bc84b; }
+.gseat.acting  { box-shadow: 0 0 0 3px #ffe42d88; }
+.gseat.myturn  { box-shadow: 0 0 0 4px #ffe42d; animation: pulse .8s ease-in-out infinite alternate; }
+@keyframes pulse { from { box-shadow: 0 0 0 3px #ffe42d99; } to { box-shadow: 0 0 10px 5px #ffe42dcc; } }
+.gseat-name { font-size: 11px; display: flex; justify-content: space-between;
+  margin-bottom: 3px; }
+.gseat-score { font-size: 10px; color: #829672; margin-bottom: 3px;
+  display: flex; justify-content: space-between; gap: 6px; }
+.gseat-cards { display: flex; flex-wrap: nowrap; min-height: 52px; align-items: flex-end; }
+.gseat-count { font-size: 10px; color: #829672; margin-top: 2px; }
+.human-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #4bc84b; margin-right: 4px; vertical-align: middle; }
+
+/* ── Trick zone ──────────────────────────────────────────────────────────── */
+#gtrick-zone { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.gtrick-slot { position: absolute; transform: translate(-50%, -50%); }
+.gtrick-slot .card { margin-left: -18px; }
+.gtrick-slot .card:first-child { margin-left: 0; }
+.gtrick-slot .slot-label { font-size: 10px; color: #829672; text-align: center; margin-top: 2px; }
+.gtrick-slot.winner .card { outline: 2px solid #ffaf00; }
+
+/* ── Annotation ──────────────────────────────────────────────────────────── */
+#gann { position: absolute; text-align: center; pointer-events: none;
+  font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+
+/* ── Move picker (removed — selection-based) ─────────────────────────────── */
+
+/* ── Connection badge ────────────────────────────────────────────────────── */
+#conn-badge { position: fixed; top: 8px; right: 12px; font-size: 11px;
+  padding: 3px 8px; border-radius: 4px; background: #162c1c; z-index: 200; }
+#conn-badge.ok  { color: #4bc84b; border: 1px solid #4bc84b; }
+#conn-badge.off { color: #e06060; border: 1px solid #e06060; }
+</style>
+</head>
+<body>
+
+<div id="conn-badge" class="off">⬤ disconnected</div>
+
+<!-- ── Lobby ─────────────────────────────────────────────────────────────── -->
+<div id="lobby-screen" class="screen active">
+  <div id="lobby-box">
+    <h1>红十 Red Ten Poker</h1>
+    <div class="lfield">
+      <label>AI difficulty for empty seats</label>
+      <select id="ai-tier">
+        <option value="rule">Rule-Based (fast)</option>
+        <option value="search" selected>Search AI</option>
+        <option value="ml">ML AI</option>
+      </select>
+    </div>
+    <button class="lbtn" onclick="createGame()">＋ Create New Game</button>
+    <div style="text-align:center;font-size:11px;color:#829672;margin: 8px 0 10px">— or join an existing game —</div>
+    <div class="lfield">
+      <label>Room Code</label>
+      <div id="join-row">
+        <input id="join-code" type="text" maxlength="4" placeholder="ABCD"
+               oninput="this.value=this.value.toUpperCase()"
+               onkeydown="if(event.key==='Enter') joinGame()">
+        <button onclick="joinGame()">Join →</button>
+      </div>
+    </div>
+    <div id="lobby-err"></div>
+    <div style="margin-top:16px;text-align:center">
+      <a href="/" style="color:#829672;font-size:12px">← Watch AI replay viewer</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── Room / waiting ─────────────────────────────────────────────────────── -->
+<div id="room-screen" class="screen">
+  <div id="room-box">
+    <h2>Game Room</h2>
+    <div id="room-code-display">----</div>
+    <div id="room-share">Share this code with up to 5 friends</div>
+    <div id="seat-grid"></div>
+    <button id="start-btn" onclick="startGame()">▶ Start Game</button>
+    <div id="room-status-msg">Waiting for players…</div>
+  </div>
+</div>
+
+<!-- ── Game ───────────────────────────────────────────────────────────────── -->
+<div id="game-screen" class="screen">
+  <div id="gmain">
+    <div id="gtrick-zone"></div>
+    <div id="gseats"></div>
+    <div id="gann"></div>
+    <div id="game-over-banner" style="display:none;position:absolute;inset:0;
+      background:rgba(8,36,12,0.92);z-index:30;display:none;
+      align-items:center;justify-content:center;flex-direction:column;gap:14px;">
+      <div style="font-size:22px;color:#ffe42d;font-weight:bold">Game Over</div>
+      <a href="/" id="review-link" style="background:#285a34;border:1px solid #ffe42d;
+        border-radius:7px;color:#ffe42d;font-size:14px;padding:10px 22px;text-decoration:none;">
+        ▶ Review Game
+      </a>
+      <button onclick="location.reload()" style="background:#162c1c;border:1px solid #3a6a44;
+        border-radius:7px;color:#829672;font-size:13px;padding:8px 20px;cursor:pointer;">
+        New Game
+      </button>
+    </div>
+  </div>
+  <div id="gpanel">
+    <h2>Score Board</h2>
+    <div id="g-score-table"></div>
+    <div id="gevlog-label">Event log</div>
+    <div id="gevlog"></div>
+  </div>
+  <div id="ghand">
+    <div id="ghand-actions">
+      <span id="turn-msg">Waiting…</span>
+      <button id="pass-btn" class="abtn pass-btn" style="display:none" onclick="playPass()">Pass</button>
+      <button id="play-btn" class="abtn play-btn"  disabled onclick="playSelected()">Play</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let ws = null;
+let myRoom = null;
+let mySeat = -1;
+let roomSeats = [];        // [{seat, mode, you}]
+let gameEvents = [];       // full event list (grows during game)
+let gameSnap = null;       // latest snapshot
+let myTurnMoves = null;    // legal_moves from your_turn msg, or null
+let lastActor   = null;    // player index who last acted
+let evLog = [];            // recent event descriptions
+
+const TRICK_OFF = [[0,100],[-110,65],[-130,-12],[0,-100],[130,-12],[110,65]];
+
+// ── Screen helpers ────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Lobby ─────────────────────────────────────────────────────────────────────
+async function createGame() {
+  const tier = document.getElementById('ai-tier').value;
+  const err  = document.getElementById('lobby-err');
+  err.textContent = '';
+  try {
+    const r = await fetch('/api/room/create', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ai_tier: tier})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    await enterRoom(d.room_code, -1);
+  } catch(e) { err.textContent = 'Error: ' + e.message; }
+}
+
+async function joinGame() {
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  const err  = document.getElementById('lobby-err');
+  err.textContent = '';
+  if (code.length !== 4) { err.textContent = 'Enter a 4-letter code.'; return; }
+  try {
+    await enterRoom(code, -1);
+  } catch(e) { err.textContent = 'Error: ' + e.message; }
+}
+
+async function enterRoom(code, preferSeat) {
+  // Join via REST first to get seat assignment.
+  const r = await fetch(`/api/room/join/${code}`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({seat: preferSeat})});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+
+  myRoom = d.room_code;
+  mySeat = d.seat;
+  roomSeats = d.seats;
+
+  document.getElementById('room-code-display').textContent = myRoom;
+  renderSeatGrid();
+  showScreen('room-screen');
+  connectWS();
+}
+
+// ── Room screen ───────────────────────────────────────────────────────────────
+function renderSeatGrid() {
+  const grid = document.getElementById('seat-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const info = roomSeats[i] || {seat: i, mode: 'ai'};
+    const isMe = i === mySeat;
+    const isHuman = info.mode === 'human';
+    const div = document.createElement('div');
+    div.className = 'seat-slot ' + (isMe ? 'mine' : isHuman ? 'taken' : 'ai');
+    div.id = 'slot-' + i;
+    div.innerHTML = `<div class="slot-label">Seat ${i}</div>
+      <div class="slot-status">${isMe ? '👤 You' : isHuman ? '👤 Human' : '🤖 AI'}</div>`;
+    if (!isHuman && !isMe) div.onclick = () => claimSeat(i);
+    grid.appendChild(div);
+  }
+}
+
+async function claimSeat(seat) {
+  if (ws) {
+    // Disconnect and rejoin at new seat.
+    ws.close();
+    ws = null;
+  }
+  const r = await fetch(`/api/room/join/${myRoom}`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({seat})});
+  const d = await r.json();
+  if (!r.ok) { alert(d.detail); return; }
+  mySeat = d.seat;
+  connectWS();
+}
+
+function startGame() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const hands = 3;  // TODO: let user choose
+    ws.send(JSON.stringify({type: 'start_game', hands}));
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${myRoom}/${mySeat}`);
+
+  ws.onopen = () => {
+    badge('ok');
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    handleMsg(msg);
+  };
+
+  ws.onclose = () => {
+    badge('off');
+    // Attempt reconnect after 2s if we have a room.
+    if (myRoom !== null) setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => badge('off');
+}
+
+function badge(state) {
+  const el = document.getElementById('conn-badge');
+  el.className = 'ok' === state ? 'ok' : 'off';
+  el.textContent = state === 'ok' ? '⬤ connected' : '⬤ disconnected';
+  // Make badge visible regardless of screen
+  el.style.display = 'block';
+}
+
+function handleMsg(msg) {
+  switch (msg.type) {
+    case 'room_state':
+      roomSeats = msg.seats;
+      renderSeatGrid();
+      document.getElementById('room-status-msg').textContent =
+        msg.status === 'running' ? 'Game in progress — rejoining…' : 'Waiting for players…';
+      break;
+
+    case 'seat_update':
+      if (roomSeats[msg.seat]) roomSeats[msg.seat].mode = msg.mode;
+      renderSeatGrid();
+      break;
+
+    case 'game_started':
+      roomSeats = msg.seats;
+      initGameScreen();
+      showScreen('game-screen');
+      requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); });
+      break;
+
+    case 'catch_up':
+      gameEvents = msg.events;
+      if (gameEvents.length) {
+        gameSnap = gameEvents[gameEvents.length - 1].snap;
+        initGameScreen();
+        showScreen('game-screen');
+        requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); renderGame(); });
+      }
+      break;
+
+    case 'game_event':
+      gameEvents.push(msg.event);
+      gameSnap = msg.event.snap;
+      if (msg.event.player != null) lastActor = msg.event.player;
+      evLog.push(msg.event.desc);
+      if (evLog.length > 60) evLog.shift();
+      renderGame();
+      break;
+
+    case 'your_turn':
+      myTurnMoves = msg.legal_moves;
+      showMovePicker(msg.legal_moves);
+      break;
+
+    case 'game_over':
+      myTurnMoves = null;
+      hideMovePicker();
+      if (msg.replay) {
+        try { localStorage.setItem('pendingReplay', JSON.stringify(msg.replay)); } catch(_) {}
+      }
+      showGameOverBanner();
+      break;
+
+    case 'error':
+      console.warn('Server error:', msg.msg);
+      break;
+  }
+}
+
+// ── Game screen ───────────────────────────────────────────────────────────────
+function initGameScreen() {
+  buildGSeats();
+  buildGTrickZone();
+}
+
+function buildGSeats() {
+  const el = document.getElementById('gseats');
+  el.innerHTML = '';
+  for (let p = 0; p < 6; p++) {
+    const seat = document.createElement('div');
+    seat.className = 'gseat' + (p === mySeat ? ' mine' : '');
+    seat.id = 'gseat-' + p;
+    seat.innerHTML = `
+      <div class="gseat-name">
+        <span class="sname" id="gsname-${p}">P${p}${p===mySeat?' (You)':''}</span>
+        <span id="gsbadge-${p}"></span>
+      </div>
+      <div class="gseat-score">
+        <span id="gsc-hand-${p}">hand 0</span>
+        <span id="gsc-cum-${p}">total 0</span>
+      </div>
+      <div class="gseat-cards" id="ghand-${p}"></div>
+      <div class="gseat-count" id="gcnt-${p}"></div>`;
+    el.appendChild(seat);
+  }
+  // positioning deferred — called after the screen is visible
+}
+
+const FRAC = [
+  [0.50, 0.88], [0.02, 0.72], [0.02, 0.35],
+  [0.50, 0.09], [0.98, 0.35], [0.98, 0.72],
+];
+
+function positionGSeats() {
+  for (let p = 0; p < 6; p++) {
+    const seat = document.getElementById('gseat-' + p);
+    if (!seat) return;
+    seat.style.left = (FRAC[p][0] * 100) + '%';
+    seat.style.top  = (FRAC[p][1] * 100) + '%';
+    seat.classList.remove('anchor-left', 'anchor-right');
+    if (p === 1 || p === 2) seat.classList.add('anchor-left');
+    if (p === 4 || p === 5) seat.classList.add('anchor-right');
+  }
+}
+
+function buildGTrickZone() {
+  const tz = document.getElementById('gtrick-zone');
+  tz.innerHTML = '';
+  for (let p = 0; p < 6; p++) {
+    const slot = document.createElement('div');
+    slot.className = 'gtrick-slot';
+    slot.id = 'gtslot-' + p;
+    slot.innerHTML = `<div id="gtcards-${p}"></div>
+                      <div class="slot-label">P${p}</div>`;
+    tz.appendChild(slot);
+  }
+  // positioning deferred — called after the screen is visible
+}
+
+function positionGTrickZone() {
+  const main = document.getElementById('gmain');
+  if (!main) return;
+  const W = main.clientWidth, H = main.clientHeight;
+  const tz = document.getElementById('gtrick-zone');
+  tz.style.left = (W * 0.50) + 'px';
+  tz.style.top  = (H * 0.50) + 'px';
+  const scale = Math.min(W / 1400, H / 900);
+  for (let p = 0; p < 6; p++) {
+    const slot = document.getElementById('gtslot-' + p);
+    if (slot) {
+      slot.style.left = (TRICK_OFF[p][0] * scale) + 'px';
+      slot.style.top  = (TRICK_OFF[p][1] * scale) + 'px';
+    }
+  }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+function cardHtml(c, opts = {}) {
+  let cls = 'card';
+  if (c.rt) cls += ' red-ten';
+  else if (c.bj) cls += ' big-joker';
+  else if (c.sj) cls += ' small-joker';
+  else if (c.red) cls += ' red-suit';
+  if (c.sv > 0) cls += ' scoring';
+  if (opts.selectable) cls += ' selectable';
+  if (opts.selected) cls += ' selected';
+  const di = opts.idx !== undefined ? ` data-idx="${opts.idx}"` : '';
+  if (c.bj || c.sj)
+    return `<div class="${cls}"${di}><span class="cj">${c.rl}</span></div>`;
+  const star = c.rt ? '<span class="cstar">★</span>' : '';
+  return `<div class="${cls}"${di}><span class="cr">${c.rl}</span><span class="cs">${c.ss}</span>${star}</div>`;
+}
+
+function backCardHtml() {
+  return `<div class="card back"></div>`;
+}
+
+let selectedCardIdxs = new Set();
+
+const RANK_SORT = {"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"10":10,
+                   "J":11,"Q":12,"K":13,"A":14,"2":15,"小王":16,"大王":17};
+const SUIT_SORT = {"CLUBS":0,"DIAMONDS":1,"HEARTS":2,"SPADES":3,"JOKER":4};
+
+function sortedHand(hand) {
+  return hand
+    .map((c, i) => ({c, i}))
+    .sort((a, b) => {
+      const rd = (RANK_SORT[a.c.rl] ?? 0) - (RANK_SORT[b.c.rl] ?? 0);
+      if (rd !== 0) return rd;
+      return (SUIT_SORT[a.c.s] ?? 0) - (SUIT_SORT[b.c.s] ?? 0);
+    });
+}
+
+function renderGame() {
+  if (!gameSnap) return;
+  const snap = gameSnap;
+
+  // Seats
+  const realTeams = snap.hands.map(h => h.some(c => c.rt) ? 'RED' : 'NON_RED');
+  for (let p = 0; p < 6; p++) {
+    const seat = document.getElementById('gseat-' + p);
+    if (!seat) continue;
+
+    const ident = snap.ids[p];
+    const isHuman = roomSeats[p] && roomSeats[p].mode === 'human';
+
+    // Border class
+    const anchor = p===1||p===2 ? ' anchor-left' : p===4||p===5 ? ' anchor-right' : '';
+    let cls = 'gseat' + anchor;
+    if (p === mySeat) cls += ' mine';
+    else if (ident === 'Red') cls += ' red';
+    else if (ident === 'Non-Red') cls += ' nonred';
+    if (p === mySeat && myTurnMoves) cls += ' myturn';
+    else if (p === lastActor && p !== mySeat) cls += ' acting';
+    seat.className = cls;
+
+    // Name
+    const nameEl = document.getElementById('gsname-' + p);
+    const badgeEl = document.getElementById('gsbadge-' + p);
+    const team = realTeams[p];
+    let name = p === mySeat ? `P${p} (You)` : `P${p}`;
+    if (snap.fin[p]) {
+      const pos = snap.fo.indexOf(p);
+      name += pos === 0 ? ' 大贡' : pos === snap.fo.length-1 ? ' 末贡' : ` #${pos+1}`;
+    }
+    nameEl.textContent = name;
+    nameEl.style.color = snap.fin[p] ? '#4bc84b' : team==='RED' ? '#dc4848' : '#589bdc';
+
+    if (ident === 'Red') { badgeEl.textContent = '♥ Red'; badgeEl.style.color = '#dc4848'; }
+    else if (ident === 'Non-Red') { badgeEl.textContent = '○'; badgeEl.style.color = '#589bdc'; }
+    else { badgeEl.textContent = isHuman ? '👤' : ''; }
+
+    // Scores
+    document.getElementById('gsc-hand-' + p).textContent = 'hand ' + snap.ts[p];
+    document.getElementById('gsc-cum-'  + p).textContent = 'total ' + snap.cs[p];
+
+    // Cards — your own face-up and interactive; others show face-down backs
+    const cardsEl = document.getElementById('ghand-' + p);
+    const hand = snap.hands[p];
+    if (p === mySeat) {
+      // Face-up, sorted by rank then suit; data-idx = original hand index
+      const sorted = sortedHand(hand);
+      let ml = -18;
+      if (sorted.length > 1) {
+        const vis = Math.max(5, (280 - 36) / (sorted.length - 1));
+        ml = Math.min(-6, -(36 - vis));
+      }
+      cardsEl.innerHTML = sorted.map(({c, i}) =>
+        cardHtml(c, {selectable: !!myTurnMoves, selected: selectedCardIdxs.has(i), idx: i})
+      ).join('');
+      cardsEl.style.setProperty('--cml', ml + 'px');
+      if (myTurnMoves) {
+        cardsEl.querySelectorAll('.card').forEach(el => {
+          el.addEventListener('click', () => toggleCard(parseInt(el.dataset.idx)));
+        });
+      }
+    } else {
+      // Face-down — use hcnt (server masks other hands to [])
+      const count = snap.hcnt ? snap.hcnt[p] : hand.length;
+      const shown = Math.min(count, 10);
+      cardsEl.innerHTML = Array(shown).fill(backCardHtml()).join('');
+    }
+    const trueCount = snap.hcnt ? snap.hcnt[p] : snap.hands[p].length;
+    document.getElementById('gcnt-' + p).textContent = trueCount + ' cards';
+  }
+
+  // Trick zone
+  for (let p = 0; p < 6; p++) {
+    const el = document.getElementById('gtcards-' + p);
+    if (el) el.innerHTML = '';
+  }
+  const winnerP = snap.tw;
+  for (const [p, move] of snap.tp) {
+    if (!move || move.pass) continue;
+    const slot = document.getElementById('gtslot-' + p);
+    if (slot) slot.className = 'gtrick-slot' + (p === winnerP ? ' winner' : '');
+    const el = document.getElementById('gtcards-' + p);
+    if (el) el.innerHTML = move.cards.map(c => cardHtml(c, {})).join('');
+  }
+
+  // Score panel
+  const scoreEl = document.getElementById('g-score-table');
+  let sh = '<div class="row" style="color:#829672;font-size:10px"><span class="pname">Player</span><span class="pts">Hand</span><span class="pts">Total</span></div>';
+  for (let p = 0; p < 6; p++) {
+    const ident = snap.ids[p];
+    const col = ident === 'Red' ? '#dc4848' : ident === 'Non-Red' ? '#589bdc' : '#e1e4d7';
+    const fin = snap.fin[p] ? ' ✓' : '';
+    const you = p === mySeat ? ' (You)' : '';
+    sh += `<div class="row" style="color:${col}">
+      <span class="pname">P${p}${fin}${you}</span>
+      <span class="pts">${snap.ts[p]}</span>
+      <span class="pts">${snap.cs[p]}</span>
+    </div>`;
+  }
+  scoreEl.innerHTML = sh;
+
+  // Event log
+  const logEl = document.getElementById('gevlog');
+  const lineH = 16;
+  const vis = Math.max(4, Math.floor(logEl.clientHeight / lineH));
+  const slice = evLog.slice(-vis);
+  logEl.innerHTML = slice.map((d, i) =>
+    `<div class="ev${i===slice.length-1?' cur':''}">${d.slice(0,50)}</div>`
+  ).join('');
+
+  // Action bar
+  renderMyHandStrip();
+}
+
+function renderMyHandStrip() {
+  const msg = document.getElementById('turn-msg');
+  if (!myTurnMoves) {
+    msg.textContent = 'Waiting for your turn…';
+    msg.style.color = '#829672';
+    document.getElementById('pass-btn').style.display = 'none';
+    document.getElementById('play-btn').disabled = true;
+    document.getElementById('play-btn').textContent = 'Play';
+  } else {
+    msg.textContent = 'Your turn — select cards';
+    msg.style.color = '#ffe42d';
+    const hasPass = myTurnMoves.some(m => m.is_pass);
+    document.getElementById('pass-btn').style.display = hasPass ? '' : 'none';
+    updatePlayBtnState();
+  }
+}
+
+// ── Card selection ────────────────────────────────────────────────────────────
+function cardKey(c) { return c.rl + '|' + c.s; }
+
+function findMatchingMove() {
+  if (!myTurnMoves || !gameSnap) return null;
+  const hand = gameSnap.hands[mySeat] || [];
+  const selCards = [...selectedCardIdxs].map(i => hand[i]).filter(Boolean);
+  const selKey = selCards.map(cardKey).sort().join(',');
+
+  for (const m of myTurnMoves) {
+    if (m.is_pass) continue;
+    const mCards = m.cards ? m.cards.cards : [];
+    if (mCards.length !== selCards.length) continue;
+    if (mCards.map(cardKey).sort().join(',') === selKey) return m;
+  }
+  return null;
+}
+
+function updatePlayBtnState() {
+  const btn = document.getElementById('play-btn');
+  const match = findMatchingMove();
+  btn.disabled = !match;
+  btn.textContent = match ? `Play (${match.desc})` : 'Play';
+}
+
+function toggleCard(idx) {
+  if (selectedCardIdxs.has(idx)) selectedCardIdxs.delete(idx);
+  else selectedCardIdxs.add(idx);
+  renderGame();
+  updatePlayBtnState();
+}
+
+// ── Turn management ───────────────────────────────────────────────────────────
+function showMovePicker(moves) {
+  myTurnMoves = moves;
+  renderGame();        // re-render to make cards selectable
+  renderMyHandStrip();
+}
+
+function hideMovePicker() {
+  selectedCardIdxs.clear();
+  myTurnMoves = null;
+  renderMyHandStrip();
+}
+
+function showGameOverBanner() {
+  const banner = document.getElementById('game-over-banner');
+  banner.style.display = 'flex';
+}
+
+function playSelected() {
+  const match = findMatchingMove();
+  if (!match) return;
+  sendMove(match.idx);
+}
+
+function playPass() {
+  const passMv = myTurnMoves && myTurnMoves.find(m => m.is_pass);
+  if (!passMv) return;
+  sendMove(passMv.idx);
+}
+
+function sendMove(idx) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type: 'move', move_idx: idx}));
+  hideMovePicker();
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  positionGSeats();
+  positionGTrickZone();
+  if (gameSnap) renderGame();
+});
+</script>
+</body>
+</html>

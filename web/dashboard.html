@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Ten — Training Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100%; background: #0d2614;
+  font-family: "Arial Unicode MS","PingFang SC","Heiti SC",Arial,sans-serif;
+  color: #d8ddd0; font-size: 13px;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+header {
+  background: #0a1e0f; border-bottom: 2px solid #2d6e37;
+  padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+}
+header h1 { font-size: 18px; color: #ffe42d; }
+header .sub { color: #829672; font-size: 12px; margin-left: 4px; }
+#status-badge {
+  margin-left: auto; padding: 4px 12px; border-radius: 12px; font-size: 12px;
+  font-weight: bold; letter-spacing: .04em;
+}
+.badge-running  { background: #2a5e30; color: #6fda80; border: 1px solid #4caf50; }
+.badge-done     { background: #1e3d5c; color: #72b8ff; border: 1px solid #3a7fc0; }
+.badge-starting { background: #3a2e00; color: #ffe42d; border: 1px solid #ffe42d; }
+.badge-no_log   { background: #3a1010; color: #e08080; border: 1px solid #c04040; }
+
+#refresh-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 24px; background: #0c1e10; border-bottom: 1px solid #1e4a22;
+  font-size: 11px; color: #829672;
+}
+#refresh-row button {
+  background: #1e4a22; border: 1px solid #3a7a44; border-radius: 5px;
+  color: #d8ddd0; padding: 3px 10px; cursor: pointer; font-size: 11px;
+}
+#refresh-row button:hover { background: #2a6030; }
+#last-updated { margin-left: auto; }
+
+main { padding: 20px 24px; display: grid; gap: 20px;
+  grid-template-columns: 1fr 1fr; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.card {
+  background: #0c2414; border: 1px solid #2a5a30; border-radius: 8px;
+  padding: 16px 18px;
+}
+.card h2 {
+  font-size: 13px; color: #ffe42d; margin-bottom: 12px; letter-spacing: .04em;
+  text-transform: uppercase; border-bottom: 1px solid #1e4a22; padding-bottom: 6px;
+}
+.card.wide { grid-column: 1 / -1; }
+
+/* ── Header info grid ────────────────────────────────────────────────────── */
+#hdr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.hdr-item { background: #101e14; border-radius: 6px; padding: 10px 12px; }
+.hdr-item .lbl { font-size: 10px; color: #829672; margin-bottom: 4px; }
+.hdr-item .val { font-size: 16px; color: #d8ddd0; font-weight: bold; }
+
+/* ── Round table ─────────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: #829672; font-weight: normal; padding: 4px 8px;
+     border-bottom: 1px solid #1e4a22; }
+td { padding: 5px 8px; border-bottom: 1px solid #162a1c; font-family: monospace; }
+tr:last-child td { border-bottom: none; }
+tr.current td { background: #162a1c; }
+.pct-good   { color: #6fda80; }
+.pct-mid    { color: #ffe42d; }
+.pct-bad    { color: #e08080; }
+.tag-running { font-size: 10px; color: #ffe42d; margin-left: 4px; }
+.tag-done    { font-size: 10px; color: #6fda80; margin-left: 4px; }
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; height: 220px; }
+
+/* ── Model files ─────────────────────────────────────────────────────────── */
+#model-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.model-chip {
+  background: #101e14; border: 1px solid #2a5a30; border-radius: 6px;
+  padding: 6px 10px; font-size: 11px; font-family: monospace;
+}
+.model-chip .mtime { color: #829672; margin-left: 6px; }
+.model-chip.best { border-color: #ffe42d; color: #ffe42d; }
+
+/* ── Analysis ────────────────────────────────────────────────────────────── */
+#analysis { font-size: 12px; line-height: 1.8; color: #b0b8a8; }
+#analysis .insight { margin-bottom: 6px; padding-left: 14px; position: relative; }
+#analysis .insight::before { content: "•"; position: absolute; left: 2px; color: #ffe42d; }
+#analysis .insight.good::before  { color: #6fda80; }
+#analysis .insight.warn::before  { color: #ffe42d; }
+#analysis .insight.info::before  { color: #72b8ff; }
+#analysis .insight em { color: #d8ddd0; font-style: normal; font-weight: bold; }
+
+/* ── No-data placeholder ─────────────────────────────────────────────────── */
+.empty { color: #829672; font-size: 12px; padding: 12px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>红十 Training Dashboard</h1>
+  <span class="sub">Red Ten Poker — ML Self-Play</span>
+  <span id="status-badge" class="badge-starting">LOADING…</span>
+</header>
+
+<div id="refresh-row">
+  <label><input type="checkbox" id="auto-refresh" checked> Auto-refresh every 30s</label>
+  <button onclick="load()">Refresh now</button>
+  <span id="last-updated"></span>
+  <span style="margin-left:12px;color:#4a7a54">Log: /tmp/selfplay_adv_search.log</span>
+</div>
+
+<main>
+
+  <!-- Run summary -->
+  <div class="card wide">
+    <h2>Run Configuration</h2>
+    <div id="hdr-grid">
+      <div class="hdr-item"><div class="lbl">Rounds</div><div class="val" id="h-rounds">—</div></div>
+      <div class="hdr-item"><div class="lbl">Games / Round</div><div class="val" id="h-games">—</div></div>
+      <div class="hdr-item"><div class="lbl">Label Mode</div><div class="val" id="h-label">—</div></div>
+      <div class="hdr-item"><div class="lbl">Opponent</div><div class="val" id="h-opp">—</div></div>
+      <div class="hdr-item"><div class="lbl">ε Decay</div><div class="val" id="h-eps">—</div></div>
+      <div class="hdr-item"><div class="lbl">Buffer Keep</div><div class="val" id="h-keep">—</div></div>
+      <div class="hdr-item"><div class="lbl">Start Model</div><div class="val" id="h-model" style="font-size:11px">—</div></div>
+      <div class="hdr-item"><div class="lbl">Completed Rounds</div><div class="val" id="h-done">—</div></div>
+    </div>
+  </div>
+
+  <!-- Win-rate chart -->
+  <div class="card">
+    <h2>Win Rate by Round</h2>
+    <div class="chart-wrap"><canvas id="wr-chart"></canvas></div>
+  </div>
+
+  <!-- Round table -->
+  <div class="card">
+    <h2>Per-Round Results</h2>
+    <div id="table-wrap">
+      <p class="empty">Waiting for data…</p>
+    </div>
+  </div>
+
+  <!-- Loss chart -->
+  <div class="card">
+    <h2>Training Loss (best val per round)</h2>
+    <div class="chart-wrap"><canvas id="loss-chart"></canvas></div>
+  </div>
+
+  <!-- Epoch detail chart for last completed round -->
+  <div class="card">
+    <h2>Epoch Loss — Last Completed Round</h2>
+    <div class="chart-wrap"><canvas id="epoch-chart"></canvas></div>
+  </div>
+
+  <!-- Analysis -->
+  <div class="card">
+    <h2>Analysis</h2>
+    <div id="analysis"><p class="empty">Waiting for data…</p></div>
+  </div>
+
+  <!-- Model files (full width) -->
+  <div class="card wide">
+    <h2>Model Checkpoints</h2>
+    <div id="model-list"><p class="empty">Scanning data/…</p></div>
+  </div>
+
+</main>
+
+<script>
+// ── Chart instances ───────────────────────────────────────────────────────────
+const CHART_DEFAULTS = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: "#829672", font: { size: 11 } } } },
+  scales: {
+    x: { ticks: { color: "#829672" }, grid: { color: "#1e3a22" } },
+    y: { ticks: { color: "#829672" }, grid: { color: "#1e3a22" } },
+  },
+};
+
+let wrChart, lossChart, epochChart;
+
+function mkChart(id, cfg) {
+  return new Chart(document.getElementById(id).getContext("2d"), cfg);
+}
+
+function initCharts() {
+  wrChart = mkChart("wr-chart", {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "vs Rule", data: [], borderColor: "#ffe42d", backgroundColor: "rgba(255,228,45,.08)",
+        tension: .3, pointRadius: 4 },
+      { label: "vs Search", data: [], borderColor: "#72b8ff", backgroundColor: "rgba(114,184,255,.08)",
+        tension: .3, pointRadius: 4 },
+      { label: "50% line", data: [], borderColor: "#555", borderDash: [4,4],
+        pointRadius: 0, fill: false },
+    ]},
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        ...CHART_DEFAULTS.scales,
+        y: { ...CHART_DEFAULTS.scales.y, min: 20, max: 80,
+             ticks: { color: "#829672", callback: v => v + "%" } },
+      },
+    },
+  });
+
+  lossChart = mkChart("loss-chart", {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Best Val Loss", data: [], borderColor: "#6fda80",
+        backgroundColor: "rgba(111,218,128,.08)", tension: .3, pointRadius: 4 },
+    ]},
+    options: CHART_DEFAULTS,
+  });
+
+  epochChart = mkChart("epoch-chart", {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Train Loss", data: [], borderColor: "#ffe42d",
+        backgroundColor: "rgba(255,228,45,.06)", tension: .2, pointRadius: 2 },
+      { label: "Val Loss",   data: [], borderColor: "#72b8ff",
+        backgroundColor: "rgba(114,184,255,.06)", tension: .2, pointRadius: 2 },
+    ]},
+    options: CHART_DEFAULTS,
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function pctClass(v) {
+  if (v >= 55) return "pct-good";
+  if (v >= 45) return "pct-mid";
+  return "pct-bad";
+}
+
+function fmtPct(v) {
+  return `<span class="${pctClass(v)}">${v.toFixed(1)}%</span>`;
+}
+
+function fmtTime(s) {
+  if (s < 60) return s.toFixed(0) + "s";
+  return (s / 60).toFixed(1) + "m";
+}
+
+function setText(id, v) { document.getElementById(id).textContent = v; }
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(data) {
+  const { header, rounds, status, models } = data;
+
+  // Status badge
+  const badge = document.getElementById("status-badge");
+  badge.className = "badge-" + status;
+  badge.textContent = {
+    running: "TRAINING…", done: "COMPLETE", starting: "STARTING", no_log: "NO LOG"
+  }[status] || status.toUpperCase();
+
+  // Header
+  if (header.total_rounds) setText("h-rounds",  header.total_rounds);
+  if (header.games_per_round) setText("h-games", header.games_per_round);
+  if (header.label_mode) setText("h-label", header.label_mode);
+  if (header.opponent)   setText("h-opp",   header.opponent);
+  if (header.eps_start != null)
+    setText("h-eps", `${header.eps_start} → ${header.eps_end}`);
+  if (header.keep)       setText("h-keep",  `${header.keep} rounds`);
+  if (header.start_model) {
+    const el = document.getElementById("h-model");
+    el.textContent = header.start_model.split("/").pop();
+    el.title = header.start_model;
+  }
+  const done = rounds.filter(r => r.complete).length;
+  setText("h-done", `${done} / ${header.total_rounds || "?"}`);
+
+  // Charts
+  const completeRounds = rounds.filter(r => r.complete);
+  const labels = completeRounds.map(r => `R${r.round}`);
+
+  wrChart.data.labels = labels;
+  wrChart.data.datasets[0].data = completeRounds.map(r => r.vs_rule?.pct ?? null);
+  wrChart.data.datasets[1].data = completeRounds.map(r => r.vs_search?.pct ?? null);
+  wrChart.data.datasets[2].data = labels.map(() => 50);
+  wrChart.update("none");
+
+  lossChart.data.labels = labels;
+  lossChart.data.datasets[0].data = completeRounds.map(r => r.best_val_loss ?? null);
+  lossChart.update("none");
+
+  // Epoch chart: last complete round with epoch data
+  const lastWithEpochs = [...completeRounds].reverse().find(r => r.epochs?.length);
+  if (lastWithEpochs) {
+    const ep = lastWithEpochs.epochs;
+    epochChart.data.labels = ep.map(e => e.epoch);
+    epochChart.data.datasets[0].data = ep.map(e => e.train);
+    epochChart.data.datasets[1].data = ep.map(e => e.val);
+    epochChart.options.plugins.title = {
+      display: true, text: `Round ${lastWithEpochs.round}`,
+      color: "#829672", font: { size: 11 },
+    };
+    epochChart.update("none");
+  }
+
+  // Table
+  const wrap = document.getElementById("table-wrap");
+  if (!rounds.length) {
+    wrap.innerHTML = '<p class="empty">No rounds yet…</p>';
+  } else {
+    let html = `<table>
+      <thead><tr>
+        <th>Round</th><th>ε</th><th>Samples</th><th>Collect</th>
+        <th>Train</th><th>vs Rule</th><th>vs Search</th>
+      </tr></thead><tbody>`;
+    for (const r of rounds) {
+      const isLast = r === rounds[rounds.length - 1];
+      const cls = isLast && !r.complete ? "current" : "";
+      const tag = r.complete
+        ? '<span class="tag-done">✓</span>'
+        : '<span class="tag-running">⟳</span>';
+      const vr = r.vs_rule   ? fmtPct(r.vs_rule.pct)   : "—";
+      const vs = r.vs_search ? fmtPct(r.vs_search.pct) : "—";
+      const samples = r.samples ? (r.samples / 1000).toFixed(0) + "k" : "…";
+      const ctime   = r.collect_time_s ? fmtTime(r.collect_time_s) : "…";
+      const ttime   = r.train_time_s   ? fmtTime(r.train_time_s)   : "…";
+      html += `<tr class="${cls}"><td>R${r.round}${tag}</td>
+        <td>${r.eps.toFixed(2)}</td>
+        <td>${samples}</td><td>${ctime}</td><td>${ttime}</td>
+        <td>${vr}</td><td>${vs}</td></tr>`;
+    }
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+  }
+
+  // Analysis
+  renderAnalysis(completeRounds, header, status);
+
+  // Models
+  const ml = document.getElementById("model-list");
+  if (!models.length) {
+    ml.innerHTML = '<p class="empty">No checkpoints found in data/</p>';
+  } else {
+    ml.innerHTML = models.map(m => {
+      const isBest = m.name === "model.pt";
+      return `<div class="model-chip ${isBest ? "best" : ""}">
+        ${m.name}<span class="mtime">${m.modified}</span>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("last-updated").textContent =
+    "Updated " + new Date().toLocaleTimeString();
+}
+
+function renderAnalysis(rounds, header, status) {
+  const el = document.getElementById("analysis");
+  if (!rounds.length) {
+    el.innerHTML = '<p class="empty">Waiting for completed rounds…</p>';
+    return;
+  }
+
+  const insights = [];
+  const vrVals = rounds.map(r => r.vs_rule?.pct).filter(v => v != null);
+  const vsVals = rounds.map(r => r.vs_search?.pct).filter(v => v != null);
+
+  const vrAvg   = vrVals.reduce((a, b) => a + b, 0) / vrVals.length;
+  const vsAvg   = vsVals.reduce((a, b) => a + b, 0) / vsVals.length;
+  const vsMax   = Math.max(...vsVals);
+  const vrMax   = Math.max(...vrVals);
+  const lastVS  = vsVals[vsVals.length - 1];
+  const lastVR  = vrVals[vrVals.length - 1];
+
+  // vs-Search summary
+  const vsCls = vsAvg >= 55 ? "good" : vsAvg >= 45 ? "warn" : "";
+  insights.push({ cls: vsCls,
+    text: `Average vs Search: <em>${vsAvg.toFixed(1)}%</em> across ${vsVals.length} rounds ` +
+          `(baseline model_r6 = 45%). ${vsAvg >= 50 ? "Beating SearchPlayer on average." : "Below SearchPlayer — still warming up."}` });
+
+  // vs-Rule summary
+  const vrCls = vrAvg >= 55 ? "good" : vrAvg >= 45 ? "warn" : "";
+  insights.push({ cls: vrCls,
+    text: `Average vs Rule: <em>${vrAvg.toFixed(1)}%</em>. ` +
+          (vrAvg >= 55 ? "Comfortably beating RulePlayer too." :
+           vrAvg >= 45 ? "Near-parity with RulePlayer — normal when training vs Search opponents." :
+           "Below Rule baseline. Model is specializing against Search-style play.") });
+
+  // Peak
+  if (vsMax >= 60)
+    insights.push({ cls: "good",
+      text: `Peak vs Search: <em>${vsMax.toFixed(1)}%</em> — significantly above SearchPlayer.` });
+
+  // Trend check (last 3 rounds)
+  if (vsVals.length >= 3) {
+    const recent = vsVals.slice(-3);
+    const trend  = recent[2] - recent[0];
+    if (trend > 5)
+      insights.push({ cls: "good",  text: `vs-Search trending <em>up</em> (+${trend.toFixed(0)}pp over last 3 rounds). Learning is accumulating.` });
+    else if (trend < -10)
+      insights.push({ cls: "warn",  text: `vs-Search dropped ${Math.abs(trend).toFixed(0)}pp over last 3 rounds. Possible noise or overfit — watch rounds 8–10.` });
+    else
+      insights.push({ cls: "info",  text: `vs-Search is roughly flat over last 3 rounds (${trend > 0 ? "+" : ""}${trend.toFixed(0)}pp). Normal variance at N=40.` });
+  }
+
+  // Eval seed drop
+  const seedDropRound = rounds.find(r =>
+    r.train_samples && r.train_samples < 1_000_000);
+  if (seedDropRound)
+    insights.push({ cls: "info",
+      text: `Eval seed data (3.6M samples) cycled out at round <em>${seedDropRound.round}</em>. Training is now 100% self-play advantage labels.` });
+
+  // Training time trend
+  const lastRound = rounds[rounds.length - 1];
+  if (lastRound.train_time_s)
+    insights.push({ cls: "info",
+      text: `Last training time: <em>${fmtTime(lastRound.train_time_s)}</em>` +
+            (lastRound.early_stopped ? ` (early-stopped at epoch ${lastRound.stopped_epoch})` : " (ran all epochs)") + "." });
+
+  // Status
+  if (status === "done")
+    insights.push({ cls: "good",
+      text: `Training complete — <em>${rounds.length} rounds</em> finished. Check checkpoints in data/ for the best model.` });
+  else if (status === "running")
+    insights.push({ cls: "info",
+      text: `Round <em>${rounds.length}</em> ${rounds[rounds.length-1].complete ? "done" : "in progress"}. Auto-refreshing.` });
+
+  el.innerHTML = insights.map(i =>
+    `<div class="insight ${i.cls}">${i.text}</div>`
+  ).join("");
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    const res  = await fetch("/api/training");
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    document.getElementById("status-badge").textContent = "ERROR";
+    document.getElementById("status-badge").className   = "badge-no_log";
+    document.getElementById("last-updated").textContent = "Failed: " + e.message;
+  }
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+let timer;
+function resetTimer() {
+  clearInterval(timer);
+  if (document.getElementById("auto-refresh").checked)
+    timer = setInterval(load, 30_000);
+}
+document.getElementById("auto-refresh").addEventListener("change", resetTimer);
+
+initCharts();
+load();
+resetTimer();
+</script>
+</body>
+</html>

@@ -93,7 +93,9 @@ class GameState:
         return [p for p in range(6) if not self.player_statuses[p].finished]
 
     def turn_order_from(self, start: int) -> list[int]:
-        """Counter-clockwise order starting from start (wrapping around)."""
+        """Counter-clockwise order starting from start (wrapping around).
+        Visually: P0 (bottom) → P5 (lower-right) → P4 (right) → P3 (top)
+                  → P2 (left) → P1 (lower-left) → back to P0."""
         base = list(range(6))
         idx = base.index(start)
-        return [base[(idx + i) % 6] for i in range(6)]
+        return [base[(idx - i) % 6] for i in range(6)]

@@ -1,6 +1,7 @@
 """
 Integration test: run 100 hands of 6-player RuleBasedPlayer and verify all
-scoring invariants defined in the game rules v2.
+scoring invariants defined in the game rules v2.  Also runs 20 hands of
+SearchPlayer to verify the Tier-2 engine obeys the same invariants.
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -9,6 +10,7 @@ import random
 from collections import Counter
 from hand import Hand, RandomPlayer
 from rule_player import RuleBasedPlayer
+from search_player import SearchPlayer
 from logger import GameLogger
 from state import TerminalKind, Team, HandResult
 from cards import build_deck, Card
@@ -231,6 +233,27 @@ def run_tests():
 
     print(f"  ✓ 100 hands completed")
     print(f"    Terminal breakdown: {dict(terminal_counts)}")
+
+    # 20-hand SearchPlayer smoke test (n_samples=6 for speed)
+    search_terminal_counts = Counter()
+    for i in range(20):
+        seed = 200 + i
+        random.seed(seed)
+        players = [SearchPlayer(j, n_samples=6) for j in range(6)]
+        first = random.randint(0, 5)
+        h = Hand(players, first, logger)
+        h.deal()
+        try:
+            r = h.play()
+            search_terminal_counts[r.terminal.name] += 1
+            errs = check_result(r)
+            if errs:
+                all_errors.append(f"SearchPlayer hand {i}: " + "; ".join(errs))
+        except Exception as e:
+            all_errors.append(f"SearchPlayer hand {i} CRASH: {e}")
+
+    print(f"  ✓ 20 SearchPlayer hands completed")
+    print(f"    Terminal breakdown: {dict(search_terminal_counts)}")
 
     if all_errors:
         print(f"\n  ✗ {len(all_errors)} invariant violation(s):")

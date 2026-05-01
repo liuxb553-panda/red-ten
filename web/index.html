@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Ten Poker 红十</title>
+<style>
+/* ── Reset & base ───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #165a23;
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", Arial, sans-serif;
+  color: #e1e4d7; }
+
+/* ── App shell ──────────────────────────────────────────────────────────── */
+#app { height: 100vh; display: grid;
+  grid-template: "main panel" 1fr "ctrl ctrl" 68px / 1fr 280px; }
+
+/* ── Table ──────────────────────────────────────────────────────────────── */
+#main { grid-area: main; position: relative; background: #105a1a; overflow: hidden; }
+
+/* ── Right panel ────────────────────────────────────────────────────────── */
+#panel { grid-area: panel; background: #0c2c14; border-left: 2px solid #2d6e37;
+  display: flex; flex-direction: column; padding: 10px 10px 6px; overflow: hidden; }
+#panel h2 { font-size: 14px; text-align: center; color: #e1e4d7;
+  border-bottom: 1px solid #2d6e37; padding-bottom: 6px; margin-bottom: 6px; }
+#score-table { font-size: 12px; font-family: monospace; line-height: 1.7; }
+#score-table .row { display: flex; justify-content: space-between; }
+#score-table .pname { min-width: 90px; }
+#score-table .pts   { text-align: right; min-width: 40px; }
+#evlog-label { font-size: 10px; color: #829672; margin-top: 8px; margin-bottom: 3px; }
+#evlog { flex: 1; overflow: hidden; font-size: 10.5px; font-family: monospace; line-height: 1.55; }
+#evlog .ev { color: #829672; }
+#evlog .ev.cur { color: #ffe42d; }
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+#ctrl { grid-area: ctrl; background: #0c2414; border-top: 2px solid #2d6e37;
+  display: flex; align-items: center; gap: 6px; padding: 0 14px; }
+.btn { background: #285a34; border: 1px solid #468850; border-radius: 6px;
+  color: #e1e4d7; font-size: 12px; padding: 6px 10px; cursor: pointer;
+  white-space: nowrap; min-width: 60px; text-align: center; }
+.btn:hover { background: #3c7e48; }
+.btn.active { background: #58be64; color: #0c1a10; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+#speed-lbl { font-size: 11px; color: #829672; margin-left: 6px; }
+#ev-lbl    { font-size: 11px; color: #829672; margin-left: auto; }
+
+/* ── Config overlay ─────────────────────────────────────────────────────── */
+#cfg { position: absolute; inset: 0; background: rgba(10,30,14,0.92);
+  display: flex; align-items: center; justify-content: center; z-index: 100; }
+#cfg-box { background: #0c2c14; border: 2px solid #ffe42d; border-radius: 12px;
+  padding: 28px 36px; min-width: 300px; }
+#cfg-box h1 { font-size: 20px; color: #ffe42d; margin-bottom: 18px; text-align: center; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12px; color: #829672; margin-bottom: 4px; }
+.field select, .field input { width: 100%; background: #162c1c; border: 1px solid #3a6a44;
+  border-radius: 5px; color: #e1e4d7; padding: 7px 10px; font-size: 13px; }
+#run-btn { width: 100%; background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; margin-top: 6px; }
+#run-btn:hover { background: #3a7a48; }
+#run-btn:disabled { opacity: 0.5; cursor: default; }
+#cfg-err { color: #e06060; font-size: 12px; margin-top: 8px; text-align: center; min-height: 18px; }
+
+/* ── Player seats ───────────────────────────────────────────────────────── */
+.seat { position: absolute; transform: translate(-50%, -50%);
+  background: #122a18; border: 2px solid #556; border-radius: 8px;
+  padding: 5px 7px 4px; min-width: 160px; }
+.seat.anchor-left  { transform: translate(0,    -50%); }
+.seat.anchor-right { transform: translate(-100%, -50%); }
+.type-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px;
+  font-weight: bold; letter-spacing: .03em; margin-left: 3px; vertical-align: middle; }
+.type-badge.ml     { background: rgba(255,228,45,.18); color: #ffe42d; }
+.type-badge.search { background: rgba(114,184,255,.18); color: #72b8ff; }
+.type-badge.rule   { background: rgba(130,150,114,.18); color: #9aaa8a; }
+.seat.leader { border-color: #ffe42d; }
+.seat.red    { border-color: #dc4848; }
+.seat.nonred { border-color: #589bdc; }
+.seat-name { font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 3px; }
+.seat-name .id-badge { font-size: 10px; }
+.seat-score { font-size: 10px; color: #829672; margin-bottom: 3px;
+  display: flex; justify-content: space-between; gap: 6px; min-width: 150px; }
+.seat-cards { display: flex; flex-wrap: nowrap; min-height: 52px; align-items: flex-end; }
+.seat-count { font-size: 10px; color: #829672; margin-top: 2px; }
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.card { display: inline-block; width: 36px; height: 52px; border-radius: 4px;
+  background: #fffce2; border: 1px solid #888; position: relative; flex-shrink: 0;
+  margin-left: -22px; font-size: 11px; vertical-align: bottom; overflow: hidden; }
+.seat-cards .card:first-child { margin-left: 0; }
+.card .cr { position: absolute; top: 2px; left: 3px; font-weight: bold;
+  line-height: 1; color: #121212; }
+.card .cs { position: absolute; top: 13px; left: 3px; line-height: 1; color: #121212; }
+.card.red-suit .cr, .card.red-suit .cs { color: #c30a0a; }
+.card.red-ten  { background: #ffd200; }
+.card.red-ten .cr, .card.red-ten .cs { color: #8c2d00; }
+.card.red-ten .cstar { position: absolute; bottom: 2px; right: 2px;
+  font-size: 9px; color: #8c2d00; }
+.card.big-joker   { background: #7337c3; }
+.card.small-joker { background: #cd96eb; }
+.card.big-joker .cj, .card.small-joker .cj { position: absolute; top: 50%;
+  left: 50%; transform: translate(-50%, -50%); font-size: 9px; color: #fff;
+  text-align: center; line-height: 1.3; white-space: nowrap; }
+.card.scoring { box-shadow: 0 0 5px 2px rgba(255,220,60,0.55); }
+.card.highlight { outline: 2px solid #ffe42d; }
+
+/* ── Trick zone ─────────────────────────────────────────────────────────── */
+#trick-zone { position: absolute; transform: translate(-50%, -50%);
+  pointer-events: none; }
+.trick-slot { position: absolute; transform: translate(-50%, -50%); }
+.trick-slot .card { margin-left: -18px; }
+.trick-slot .card:first-child { margin-left: 0; }
+.trick-slot .slot-label { font-size: 10px; color: #829672; text-align: center;
+  margin-top: 2px; }
+.trick-slot.winner .card { outline: 2px solid #ffaf00; }
+.winner-ring { position: absolute; border: 3px solid #ffaf00; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none; }
+
+/* ── Card fan overlap via CSS custom property ────────────────────────────── */
+.seat-cards { --cml: -22px; }
+.seat-cards .card { margin-left: var(--cml); }
+.seat-cards .card:first-child { margin-left: 0 !important; }
+.trick-slot .card:first-child { margin-left: 0 !important; }
+
+/* ── Annotation ─────────────────────────────────────────────────────────── */
+#annotation { position: absolute; text-align: center; pointer-events: none;
+  font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+
+/* ── Hand-end overlay ───────────────────────────────────────────────────── */
+#hand-overlay { display: none; position: absolute; background: rgba(8,36,12,0.94);
+  border: 2px solid #ffe42d; border-radius: 12px; padding: 16px 22px;
+  font-size: 13px; z-index: 50; min-width: 280px; }
+#hand-overlay h3 { color: #ffe42d; margin-bottom: 8px; font-size: 16px; }
+#hand-overlay .team-row { margin-bottom: 4px; }
+#hand-overlay .p-row { font-size: 12px; color: #829672; }
+#hand-overlay .p-row.red    { color: #dc4848; }
+#hand-overlay .p-row.nonred { color: #589bdc; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="main">
+    <!-- Config overlay (shown first) -->
+    <div id="cfg">
+      <div id="cfg-box">
+        <h1>红十 Red Ten Poker</h1>
+        <div class="field">
+          <label>AI Tier</label>
+          <select id="sel-tier">
+            <option value="rule">Rule-Based (Tier 1, fast)</option>
+            <option value="search">Search AI (Tier 2, ~5s/hand)</option>
+            <option value="ml">ML AI (Tier 3, ~5s/hand)</option>
+            <option value="mixed">Mixed — Search vs Rule</option>
+            <option value="ml-vs-rule">ML vs Rule</option>
+            <option value="ml-vs-search">ML vs Search</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Hands</label>
+          <input id="inp-hands" type="number" min="1" max="10" value="3">
+        </div>
+        <div class="field">
+          <label>Seed (optional)</label>
+          <input id="inp-seed" type="number" placeholder="random">
+        </div>
+        <button id="run-btn" onclick="runGame()">▶ Record &amp; Watch</button>
+        <div id="cfg-err"></div>
+      </div>
+    </div>
+
+    <!-- Trick zone (positioned by JS) -->
+    <div id="trick-zone"></div>
+
+    <!-- Player seats (P0–P5 positioned by JS) -->
+    <div id="seats"></div>
+
+    <!-- Annotation text -->
+    <div id="annotation"></div>
+
+    <!-- Hand-end overlay -->
+    <div id="hand-overlay"></div>
+  </div>
+
+  <div id="panel">
+    <h2>Score Board</h2>
+    <div id="score-table"></div>
+    <div id="evlog-label">Event log</div>
+    <div id="evlog"></div>
+  </div>
+
+  <div id="ctrl">
+    <button class="btn" id="btn-restart" onclick="restart()">⏮</button>
+    <button class="btn" id="btn-prev"    onclick="step(-1)">◀</button>
+    <button class="btn" id="btn-play"    onclick="togglePlay()">▶ Play</button>
+    <button class="btn" id="btn-next"    onclick="step(1)">▶</button>
+    <button class="btn" id="btn-slower"  onclick="changeSpeed(1)">🐢</button>
+    <button class="btn" id="btn-faster"  onclick="changeSpeed(-1)">🐇</button>
+    <span id="speed-lbl">500ms</span>
+    <span id="ev-lbl">—</span>
+    <button class="btn" style="margin-left:auto" onclick="showCfg()">New Game</button>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let events = [];
+let evIdx  = 0;
+let playing = false;
+let timer   = null;
+const SPEEDS = [2000, 1200, 700, 400, 200, 100];
+let speedIdx = 2;  // 700ms default
+let playerTypes = [];
+
+// Trick zone offsets (px) for each player [x, y] relative to centre
+const TRICK_OFF = [[0,100],[-110,65],[-130,-12],[0,-100],[130,-12],[110,65]];
+
+// Seat positions as [leftPct, topPct] — applied as % of #main dimensions
+// Will be recalculated on resize
+let SEAT_POS = [];
+
+// ── Game recording ───────────────────────────────────────────────────────────
+async function runGame() {
+  const tier  = document.getElementById('sel-tier').value;
+  const hands = parseInt(document.getElementById('inp-hands').value) || 3;
+  const seed  = document.getElementById('inp-seed').value.trim();
+  const btn   = document.getElementById('run-btn');
+  const err   = document.getElementById('cfg-err');
+
+  err.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Recording…';
+
+  try {
+    const qs = `tier=${tier}&hands=${hands}${seed ? '&seed='+seed : ''}`;
+    const res = await fetch(`/api/game?${qs}`);
+    if (!res.ok) throw new Error(await res.text());
+    events = await res.json();
+    playerTypes = getPlayerTypes(tier);
+  } catch (e) {
+    err.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = '▶ Record & Watch';
+    return;
+  }
+
+  document.getElementById('cfg').style.display = 'none';
+  evIdx = 0;
+  playing = false;
+  stopTimer();
+  buildSeats();
+  buildTrickZone();
+  render();
+  togglePlay();  // auto-start
+}
+
+function showCfg() {
+  stopTimer();
+  playing = false;
+  document.getElementById('run-btn').disabled = false;
+  document.getElementById('run-btn').textContent = '▶ Record & Watch';
+  document.getElementById('cfg-err').textContent = '';
+  document.getElementById('cfg').style.display = 'flex';
+}
+
+// ── Playback controls ────────────────────────────────────────────────────────
+function step(dir) {
+  evIdx = Math.max(0, Math.min(events.length - 1, evIdx + dir));
+  render();
+}
+
+function restart() {
+  stopTimer();
+  playing = false;
+  evIdx = 0;
+  render();
+  updatePlayBtn();
+}
+
+function togglePlay() {
+  playing = !playing;
+  if (playing) startTimer(); else stopTimer();
+  updatePlayBtn();
+}
+
+function startTimer() {
+  stopTimer();
+  timer = setInterval(() => {
+    if (evIdx >= events.length - 1) { stopTimer(); playing = false; updatePlayBtn(); return; }
+    evIdx++;
+    render();
+    // Auto-pause at hand_end
+    const ev = events[evIdx];
+    if (ev.kind === 'hand_end') { stopTimer(); playing = false; updatePlayBtn(); }
+  }, SPEEDS[speedIdx]);
+}
+
+function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+function changeSpeed(dir) {
+  speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, speedIdx + dir));
+  document.getElementById('speed-lbl').textContent = SPEEDS[speedIdx] + 'ms';
+  if (playing) startTimer();  // restart with new speed
+}
+
+function updatePlayBtn() {
+  const btn = document.getElementById('btn-play');
+  btn.textContent = playing ? '⏸ Pause' : '▶ Play';
+  btn.classList.toggle('active', playing);
+}
+
+// ── DOM builders (run once after game loads) ─────────────────────────────────
+function buildSeats() {
+  const main = document.getElementById('main');
+  const el   = document.getElementById('seats');
+  el.innerHTML = '';
+  for (let p = 0; p < 6; p++) {
+    const seat = document.createElement('div');
+    seat.className = 'seat';
+    seat.id = 'seat-' + p;
+    seat.innerHTML = `
+      <div class="seat-name">
+        <span class="sname">P${p}</span><span class="type-badge" id="type-${p}"></span>
+        <span class="id-badge" id="badge-${p}"></span>
+      </div>
+      <div class="seat-score">
+        <span id="sc-hand-${p}">hand 0</span>
+        <span id="sc-cum-${p}">total 0</span>
+      </div>
+      <div class="seat-cards" id="hand-${p}"></div>
+      <div class="seat-count" id="cnt-${p}"></div>`;
+    el.appendChild(seat);
+  }
+  positionSeats();
+}
+
+function positionSeats() {
+  const main = document.getElementById('main');
+  const W = main.clientWidth, H = main.clientHeight;
+  const frac = [
+    [0.50, 0.88],   // P0 bottom  — centred
+    [0.02, 0.72],   // P1 lower-left  — anchored left edge
+    [0.02, 0.35],   // P2 left        — anchored left edge
+    [0.50, 0.09],   // P3 top     — centred
+    [0.98, 0.35],   // P4 right       — anchored right edge
+    [0.98, 0.72],   // P5 lower-right — anchored right edge
+  ];
+  for (let p = 0; p < 6; p++) {
+    const seat = document.getElementById('seat-' + p);
+    seat.style.left = (frac[p][0] * 100) + '%';
+    seat.style.top  = (frac[p][1] * 100) + '%';
+    seat.classList.remove('anchor-left', 'anchor-right');
+    if (p === 1 || p === 2) seat.classList.add('anchor-left');
+    if (p === 4 || p === 5) seat.classList.add('anchor-right');
+  }
+  SEAT_POS = frac;
+}
+
+function getPlayerTypes(tier) {
+  const map = {
+    'rule':         ['rule','rule','rule','rule','rule','rule'],
+    'search':       ['search','search','search','search','search','search'],
+    'ml':           ['ml','ml','ml','ml','ml','ml'],
+    'mixed':        ['search','rule','search','rule','search','rule'],
+    'ml-vs-rule':   ['ml','rule','ml','rule','ml','rule'],
+    'ml-vs-search': ['ml','search','ml','search','ml','search'],
+  };
+  return map[tier] || ['rule','rule','rule','rule','rule','rule'];
+}
+
+function buildTrickZone() {
+  const tz = document.getElementById('trick-zone');
+  tz.innerHTML = '';
+  for (let p = 0; p < 6; p++) {
+    const slot = document.createElement('div');
+    slot.className = 'trick-slot';
+    slot.id = 'tslot-' + p;
+    slot.innerHTML = `<div class="slot-cards" id="tcards-${p}"></div>
+                      <div class="slot-label">P${p}</div>`;
+    tz.appendChild(slot);
+  }
+  positionTrickZone();
+}
+
+function positionTrickZone() {
+  const main = document.getElementById('main');
+  const W = main.clientWidth, H = main.clientHeight;
+  const tz  = document.getElementById('trick-zone');
+  const cx  = W * 0.50, cy = H * 0.50;
+  tz.style.left = cx + 'px';
+  tz.style.top  = cy + 'px';
+  const scale = Math.min(W / 1400, H / 900);
+  for (let p = 0; p < 6; p++) {
+    const slot = document.getElementById('tslot-' + p);
+    slot.style.left = (TRICK_OFF[p][0] * scale) + 'px';
+    slot.style.top  = (TRICK_OFF[p][1] * scale) + 'px';
+  }
+}
+
+// ── Card HTML ────────────────────────────────────────────────────────────────
+function cardHtml(c, highlight) {
+  let cls = 'card';
+  if (c.rt) cls += ' red-ten';
+  else if (c.bj) cls += ' big-joker';
+  else if (c.sj) cls += ' small-joker';
+  else if (c.red) cls += ' red-suit';
+  if (c.sv > 0) cls += ' scoring';
+  if (highlight) cls += ' highlight';
+
+  if (c.bj || c.sj) {
+    return `<div class="${cls}"><span class="cj">${c.rl}</span></div>`;
+  }
+  const star = c.rt ? '<span class="cstar">★</span>' : '';
+  return `<div class="${cls}"><span class="cr">${c.rl}</span><span class="cs">${c.ss}</span>${star}</div>`;
+}
+
+// ── Main render ──────────────────────────────────────────────────────────────
+function render() {
+  if (!events.length) return;
+  const ev   = events[evIdx];
+  const snap = ev.snap;
+
+  // Detect who the current leader is (last "lead" event at or before evIdx)
+  let leader = null;
+  for (let i = evIdx; i >= 0; i--) {
+    if (events[i].kind === 'hand_start' || events[i].kind === 'deal') break;
+    if (events[i].kind === 'lead') { leader = events[i].player; break; }
+  }
+
+  // Compute real teams from current hand's cards (ground truth)
+  const realTeams = snap.hands.map(h => h.some(c => c.rt) ? 'RED' : 'NON_RED');
+
+  // Player seats
+  for (let p = 0; p < 6; p++) {
+    const seat   = document.getElementById('seat-' + p);
+    const hand   = snap.hands[p];
+    const ident  = snap.ids[p];  // null | "Red" | "Non-Red"
+    const done   = snap.fin[p];
+    const team   = realTeams[p];
+
+    // Border colour (preserve anchor-left/right positioning classes)
+    const anchorCls = p === 1 || p === 2 ? ' anchor-left' : p === 4 || p === 5 ? ' anchor-right' : '';
+    seat.className = 'seat' + anchorCls;
+    if (p === leader) seat.classList.add('leader');
+    else if (ident === 'Red') seat.classList.add('red');
+    else if (ident === 'Non-Red') seat.classList.add('nonred');
+
+    // Player type badge
+    const typeBadgeEl = document.getElementById('type-' + p);
+    if (typeBadgeEl) {
+      const pt = playerTypes[p] || '';
+      typeBadgeEl.className = 'type-badge' + (pt ? ' ' + pt : '');
+      typeBadgeEl.textContent = pt ? pt.toUpperCase() : '';
+    }
+
+    // Name row
+    const nameEl  = seat.querySelector('.sname');
+    const badgeEl = seat.querySelector('.id-badge');
+    let name = `P${p}`;
+    if (done) {
+      const pos = snap.fo.indexOf(p);
+      name += pos === 0 ? ' 大贡' : pos === snap.fo.length - 1 ? ' 末贡' : ` #${pos+1}`;
+    }
+    nameEl.textContent = name;
+    nameEl.style.color = done ? '#4bc84b' : team === 'RED' ? '#dc4848' : '#589bdc';
+
+    if (ident === 'Red') {
+      badgeEl.textContent = '♥ Red'; badgeEl.style.color = '#dc4848';
+    } else if (ident === 'Non-Red') {
+      badgeEl.textContent = '○'; badgeEl.style.color = '#589bdc';
+    } else {
+      badgeEl.textContent = ''; badgeEl.style.color = '#888';
+    }
+
+    // Scores
+    document.getElementById('sc-hand-' + p).textContent = 'hand ' + snap.ts[p];
+    document.getElementById('sc-cum-'  + p).textContent = 'total ' + snap.cs[p];
+
+    // Hand (face-up) — compute overlap so all cards fit in ~260px
+    const seatCardsEl = document.getElementById('hand-' + p);
+    const n = hand.length;
+    let ml = -22;
+    if (n > 1) {
+      const vis = Math.max(5, (260 - 36) / (n - 1));
+      ml = Math.min(-6, -(36 - vis));
+    }
+    seatCardsEl.style.setProperty('--cml', ml + 'px');
+    seatCardsEl.innerHTML = hand.map(c => cardHtml(c, false)).join('');
+    document.getElementById('cnt-' + p).textContent = hand.length + ' cards';
+  }
+
+  // Trick zone
+  for (let p = 0; p < 6; p++) {
+    document.getElementById('tcards-' + p).innerHTML = '';
+  }
+  const winnerP = snap.tw;
+  for (const [p, move] of snap.tp) {
+    if (!move || move.pass) continue;
+    const slot = document.getElementById('tslot-' + p);
+    slot.className = 'trick-slot' + (p === winnerP ? ' winner' : '');
+    document.getElementById('tcards-' + p).innerHTML =
+      move.cards.map(c => cardHtml(c, p === winnerP)).join('');
+  }
+
+  // Annotation
+  const ann = document.getElementById('annotation');
+  const IMPORTANT = new Set(['reveal','guan_ren','san_hong_shi','hand_end','finish','gui_zhu','mo_gong','trick_end']);
+  if (IMPORTANT.has(ev.kind)) {
+    const main = document.getElementById('main');
+    ann.textContent  = ev.desc;
+    ann.style.color  = ev.kind === 'reveal' ? '#ffe42d'
+                     : ev.kind === 'finish'  ? '#4bc84b'
+                     : ev.kind === 'trick_end' && ev.pts > 0 ? '#ffe42d'
+                     : ev.kind.includes('gong') || ev.kind === 'guan_ren' ? '#ffaf00'
+                     : '#e1e4d7';
+    const main2 = document.getElementById('main');
+    const tzEl  = document.getElementById('trick-zone');
+    const tzT   = parseInt(tzEl.style.top) || main2.clientHeight * 0.5;
+    const tzH   = 120;
+    ann.style.left   = '0';
+    ann.style.right  = '280px';
+    ann.style.top    = (tzT + tzH + 6) + 'px';
+  } else {
+    ann.textContent = '';
+  }
+
+  // Hand-end overlay
+  const overlay = document.getElementById('hand-overlay');
+  if (ev.kind === 'hand_end' && ev.result) {
+    const r   = ev.result;
+    const tnames = { NORMAL: 'Normal', GUAN_REN: '★★ 关人！', SAN_HONG_SHI: '★★★ 3红十！' };
+    let html = `<h3>Hand ${snap.hn} Result</h3>
+      <div style="color:#ffaf00;margin-bottom:8px">${tnames[r.terminal] || r.terminal}</div>
+      <div class="team-row" style="color:#dc4848">Red Team: ${r.team_pts.RED} pts</div>
+      <div class="team-row" style="color:#589bdc;margin-bottom:8px">Non-Red Team: ${r.team_pts.NON_RED} pts</div>`;
+    for (let p = 0; p < 6; p++) {
+      const isRed = r.red.includes(p);
+      const pos   = snap.fo.indexOf(p);
+      const posLbl = pos === 0 ? ' 大贡' : pos === snap.fo.length-1 ? ' 末贡' : pos>=0 ? ` #${pos+1}` : '';
+      const dg   = r.da_gong === p  ? ' 大贡' : '';
+      const mg   = r.mo_gong && r.mo_gong.includes(p) ? ' 末贡' : '';
+      html += `<div class="p-row ${isRed?'red':'nonred'}">P${p}${posLbl}${dg}${mg} — ${r.scores[p]} pts</div>`;
+    }
+    html += `<div style="font-size:11px;color:#829672;margin-top:10px">Press Space or → to continue</div>`;
+    overlay.innerHTML = html;
+    overlay.style.display = 'block';
+    // Centre overlay in #main
+    const main2 = document.getElementById('main');
+    const ow = Math.min(320, main2.clientWidth * 0.38);
+    overlay.style.width = ow + 'px';
+    overlay.style.left  = (main2.clientWidth / 2 - ow / 2) + 'px';
+    overlay.style.top   = (main2.clientHeight / 2 - overlay.offsetHeight / 2) + 'px';
+  } else {
+    overlay.style.display = 'none';
+  }
+
+  // Score panel
+  const scoreEl = document.getElementById('score-table');
+  let sh = '<div class="row" style="color:#829672;font-size:10px"><span class="pname">Player</span><span class="pts">Hand</span><span class="pts">Total</span></div>';
+  for (let p = 0; p < 6; p++) {
+    const ident = snap.ids[p];
+    const col   = ident === 'Red' ? '#dc4848' : ident === 'Non-Red' ? '#589bdc' : '#e1e4d7';
+    const fin   = snap.fin[p] ? ' ✓' : '  ';
+    sh += `<div class="row" style="color:${col}">
+      <span class="pname">P${p}${fin}</span>
+      <span class="pts">${snap.ts[p]}</span>
+      <span class="pts">${snap.cs[p]}</span>
+    </div>`;
+  }
+  scoreEl.innerHTML = sh;
+
+  // Event log
+  const logEl = document.getElementById('evlog');
+  const lineH = 16;
+  const vis   = Math.max(4, Math.floor(logEl.clientHeight / lineH));
+  const start = Math.max(0, evIdx - vis + 1);
+  const end   = Math.min(events.length, start + vis);
+  let lh = '';
+  for (let i = start; i < end; i++) {
+    const cls = i === evIdx ? 'ev cur' : 'ev';
+    const desc = events[i].desc.slice(0, 46);
+    lh += `<div class="${cls}">${desc}</div>`;
+  }
+  logEl.innerHTML = lh;
+
+  // Controls label
+  document.getElementById('ev-lbl').textContent =
+    `Event ${evIdx + 1} / ${events.length}`;
+  document.getElementById('speed-lbl').textContent = SPEEDS[speedIdx] + 'ms';
+}
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (document.getElementById('cfg').style.display !== 'none') return;
+  if (e.key === ' ')           { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowLeft')  step(-1);
+  else if (e.key === 'ArrowUp')    changeSpeed(-1);
+  else if (e.key === 'ArrowDown')  changeSpeed(1);
+  else if (e.key === 'r' || e.key === 'R') restart();
+  else if (e.key === 'n' || e.key === 'N') showCfg();
+});
+
+// ── Resize handling ──────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  positionSeats();
+  positionTrickZone();
+  if (events.length) render();
+});
+
+// Init
+updatePlayBtn();
+
+// Load a replay left by the multiplayer game-over screen.
+(function () {
+  const raw = localStorage.getItem('pendingReplay');
+  if (!raw) return;
+  localStorage.removeItem('pendingReplay');
+  try {
+    events = JSON.parse(raw);
+    if (!events.length) return;
+    document.getElementById('cfg').style.display = 'none';
+    evIdx = 0;
+    buildSeats();
+    buildTrickZone();
+    render();
+  } catch(_) {}
+})();
+</script>
+</body>
+</html>
