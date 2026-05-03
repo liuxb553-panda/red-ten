@@ -53,11 +53,16 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 .lbtn.secondary { border-color: #3a6a44; color: #829672; font-size: 13px; padding: 8px; }
 .lbtn.secondary:hover { background: #1e4a28; color: #e1e4d7; }
 #lobby-err { color: #e06060; font-size: 12px; text-align: center; min-height: 18px; margin-top: 6px; }
-#join-row { display: flex; gap: 8px; }
-#join-row input { flex: 1; text-transform: uppercase; letter-spacing: .12em; font-size: 16px; }
-#join-row button { background: #285a34; border: 1px solid #3a6a44; border-radius: 5px;
-  color: #e1e4d7; padding: 7px 14px; cursor: pointer; font-size: 13px; }
-#join-row button:hover { background: #3a7a48; }
+#join-row input:focus { outline: 1px solid #ffe42d; }
+.room-row { display: flex; align-items: center; gap: 8px; background: #162c1c;
+  border: 1px solid #3a6a44; border-radius: 6px; padding: 7px 10px; margin-bottom: 6px; }
+.room-code-tag { font-family: monospace; font-size: 15px; font-weight: bold;
+  color: #ffe42d; letter-spacing: .1em; min-width: 44px; }
+.room-info { font-size: 11px; color: #829672; flex: 1; }
+.room-join-btn { background: #285a34; border: 1px solid #3a6a44; border-radius: 5px;
+  color: #e1e4d7; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.room-join-btn:hover { background: #3a7a48; border-color: #ffe42d; }
+.no-rooms { font-size: 11px; color: #829672; text-align: center; padding: 8px 0; }
 
 /* ── Room/waiting screen ─────────────────────────────────────────────────── */
 #room-box { background: #0c2c14; border: 2px solid #2d6e37; border-radius: 12px;
@@ -222,15 +227,17 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
       </select>
     </div>
     <button class="lbtn" onclick="createGame()">＋ Create New Game</button>
-    <div style="text-align:center;font-size:11px;color:#829672;margin: 8px 0 10px">— or join an existing game —</div>
-    <div class="lfield">
-      <label>Room Code</label>
-      <div id="join-row">
-        <input id="join-code" type="text" maxlength="4" placeholder="ABCD"
-               oninput="this.value=this.value.toUpperCase()"
-               onkeydown="if(event.key==='Enter') joinGame()">
-        <button onclick="joinGame()">Join →</button>
-      </div>
+    <div style="text-align:center;font-size:11px;color:#829672;margin:10px 0 6px">— or join an existing game —</div>
+    <div id="room-list" style="min-height:36px;margin-bottom:8px;"></div>
+    <div id="join-row" style="display:flex;gap:8px;margin-bottom:4px;">
+      <input id="join-code" type="text" maxlength="4" placeholder="room code"
+             style="flex:1;background:#162c1c;border:1px solid #3a6a44;border-radius:5px;
+                    color:#e1e4d7;padding:6px 10px;font-size:13px;text-transform:uppercase;letter-spacing:.1em;"
+             oninput="this.value=this.value.toUpperCase()"
+             onkeydown="if(event.key==='Enter') joinGame()">
+      <button onclick="joinGame()"
+              style="background:#285a34;border:1px solid #3a6a44;border-radius:5px;
+                     color:#e1e4d7;padding:6px 14px;cursor:pointer;font-size:13px;">Join →</button>
     </div>
     <div id="lobby-err"></div>
     <div style="margin-top:16px;text-align:center">
@@ -365,11 +372,48 @@ let pendingSnap   = null;   // snapshot from the hand_end event
 let evLog = [];            // recent event descriptions
 
 // ── Screen helpers ────────────────────────────────────────────────────────────
+let _roomListTimer = null;
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.getElementById('debug-btn').style.display =
     (id === 'game-screen' && myRoom) ? 'block' : 'none';
+  if (id === 'lobby-screen') {
+    refreshRoomList();
+    _roomListTimer = setInterval(refreshRoomList, 3000);
+  } else {
+    clearInterval(_roomListTimer);
+  }
+}
+
+async function refreshRoomList() {
+  try {
+    const r = await fetch('/api/rooms');
+    const list = await r.json();
+    const el = document.getElementById('room-list');
+    if (!list.length) {
+      el.innerHTML = '<div class="no-rooms">No open rooms yet — create one above.</div>';
+      return;
+    }
+    const tierName = { rule: 'Rule AI', search: 'Search AI', ml: 'ML AI' };
+    el.innerHTML = list.map(room => {
+      const players = room.human_seats ? `${room.human_seats}/6 human` : 'AI only';
+      const status  = room.status === 'running' ? 'In game' : 'Waiting';
+      const tier    = tierName[room.ai_tier] || room.ai_tier;
+      return `<div class="room-row">
+        <span class="room-code-tag">${room.code}</span>
+        <span class="room-info">${status} · ${players} · ${tier}</span>
+        <button class="room-join-btn" onclick="quickJoin('${room.code}')">Join →</button>
+      </div>`;
+    }).join('');
+  } catch(_) {}
+}
+
+async function quickJoin(code) {
+  document.getElementById('lobby-err').textContent = '';
+  try { await enterRoom(code, -1); }
+  catch(e) { document.getElementById('lobby-err').textContent = 'Error: ' + e.message; }
 }
 
 // ── Lobby ─────────────────────────────────────────────────────────────────────
@@ -1147,6 +1191,10 @@ window.addEventListener('resize', () => {
   positionMoGongDisplay();
   if (gameSnap) renderGame();
 });
+
+// Initial room list load on page open
+refreshRoomList();
+_roomListTimer = setInterval(refreshRoomList, 3000);
 </script>
 </body>
 </html>

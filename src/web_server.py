@@ -102,6 +102,20 @@ class CreateRoomReq(BaseModel):
 class JoinRoomReq(BaseModel):
     seat: int = -1
 
+@app.get("/api/rooms")
+def list_rooms():
+    return [
+        {
+            "code":        room.room_code,
+            "status":      room.status,
+            "ai_tier":     room.ai_tier,
+            "human_seats": sum(1 for s in room.seats if s.is_human),
+        }
+        for room in rooms._rooms.values()
+        if room.status != "done"
+    ]
+
+
 @app.post("/api/room/create")
 def create_room(req: CreateRoomReq):
     room = rooms.create(ai_tier=req.ai_tier)

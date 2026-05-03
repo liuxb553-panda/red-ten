@@ -174,6 +174,7 @@ class GameRoom:
     def __init__(self, room_code: str, ai_tier: str = "search",
                  n_samples: int = 12):
         self.room_code = room_code
+        self.ai_tier = ai_tier
         self.status = "lobby"   # lobby | running | done
         self.seats: list[SeatController] = []
         self._renderer: Optional[LiveRenderer] = None
