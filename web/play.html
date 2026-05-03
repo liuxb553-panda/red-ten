@@ -312,7 +312,7 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let ws = null;
-// CCW turn order from seat 0: 0→5→4→3→2→1, so label them P1–P6 in that order
+// Fixed CCW label mapping: seat 0=P1, seat5=P2, seat4=P3, seat3=P4, seat2=P5, seat1=P6
 const CCW_NUM   = [1, 6, 5, 4, 3, 2];
 const CCW_ORDER = [0, 5, 4, 3, 2, 1];  // seats in P1→P6 display order
 const pLabel = p => 'P' + CCW_NUM[p];
@@ -419,14 +419,14 @@ async function enterRoom(code, preferSeat) {
 function renderSeatGrid() {
   const grid = document.getElementById('seat-grid');
   grid.innerHTML = '';
-  for (let i = 0; i < 6; i++) {
+  for (const i of CCW_ORDER) {
     const info = roomSeats[i] || {seat: i, mode: 'ai'};
     const isMe = i === mySeat;
     const isHuman = info.mode === 'human';
     const div = document.createElement('div');
     div.className = 'seat-slot ' + (isMe ? 'mine' : isHuman ? 'taken' : 'ai');
     div.id = 'slot-' + i;
-    div.innerHTML = `<div class="slot-label">Seat ${i}</div>
+    div.innerHTML = `<div class="slot-label">${pLabel(i)}</div>
       <div class="slot-status">${isMe ? '👤 You' : isHuman ? '👤 Human' : '🤖 AI'}</div>`;
     if (!isHuman && !isMe) div.onclick = () => claimSeat(i);
     grid.appendChild(div);
@@ -519,6 +519,7 @@ function exitToRoom() {
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connectWS() {
+  if (ws && ws.readyState !== WebSocket.CLOSED) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws/${myRoom}/${mySeat}`);
 
@@ -533,8 +534,10 @@ function connectWS() {
 
   ws.onclose = () => {
     badge('off');
-    // Attempt reconnect after 2s if we have a room.
-    if (myRoom !== null) setTimeout(connectWS, 2000);
+    if (myRoom !== null) setTimeout(() => {
+      // Only reconnect if no live connection was established in the meantime.
+      if (!ws || ws.readyState === WebSocket.CLOSED) connectWS();
+    }, 2000);
   };
 
   ws.onerror = () => badge('off');
@@ -667,15 +670,20 @@ const FRAC = [
   [0.50, 0.09], [0.98, 0.35], [0.98, 0.72],
 ];
 
+// CCW visual slot order from position 0: bottom, right-bot, right-top, top, left-top, left-bot
+const CCW_SLOT = [0, 5, 4, 3, 2, 1];  // FRAC index for CCW offset 0–5
+
 function positionGSeats() {
   for (let p = 0; p < 6; p++) {
     const seat = document.getElementById('gseat-' + p);
     if (!seat) return;
-    seat.style.left = (FRAC[p][0] * 100) + '%';
-    seat.style.top  = (FRAC[p][1] * 100) + '%';
+    const offset = (mySeat - p + 6) % 6;
+    const fi = CCW_SLOT[offset];
+    seat.style.left = (FRAC[fi][0] * 100) + '%';
+    seat.style.top  = (FRAC[fi][1] * 100) + '%';
     seat.classList.remove('anchor-left', 'anchor-right');
-    if (p === 1 || p === 2) seat.classList.add('anchor-left');
-    if (p === 4 || p === 5) seat.classList.add('anchor-right');
+    if (offset === 4 || offset === 5) seat.classList.add('anchor-left');
+    if (offset === 1 || offset === 2) seat.classList.add('anchor-right');
   }
 }
 
@@ -743,7 +751,8 @@ function renderGame() {
     const isHuman = roomSeats[p] && roomSeats[p].mode === 'human';
 
     // Border class
-    const anchor = p===1||p===2 ? ' anchor-left' : p===4||p===5 ? ' anchor-right' : '';
+    const offset = (mySeat - p + 6) % 6;
+    const anchor = (offset===4||offset===5) ? ' anchor-left' : (offset===1||offset===2) ? ' anchor-right' : '';
     let cls = 'gseat' + anchor;
     if (p === mySeat) cls += ' mine';
     else if (ident === 'Red') cls += ' red';
