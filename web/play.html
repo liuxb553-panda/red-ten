@@ -79,6 +79,8 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
   color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; }
 #start-btn:hover { background: #3a7a48; }
 #start-btn:disabled { opacity: 0.4; cursor: default; }
+#pgo-start-btn:hover { background: #3a7a48; }
+#pgo-exit-btn:hover { background: #1d3a24; }
 #room-status-msg { font-size: 12px; color: #829672; text-align: center; margin-top: 10px; }
 
 /* ── Game screen ─────────────────────────────────────────────────────────── */
@@ -137,12 +139,38 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
   background: #4bc84b; margin-right: 4px; vertical-align: middle; }
 
 /* ── Trick zone ──────────────────────────────────────────────────────────── */
-#gtrick-zone { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
-.gtrick-slot { position: absolute; transform: translate(-50%, -50%); }
-.gtrick-slot .card { margin-left: -18px; }
-.gtrick-slot .card:first-child { margin-left: 0; }
-.gtrick-slot .slot-label { font-size: 10px; color: #829672; text-align: center; margin-top: 2px; }
-.gtrick-slot.winner .card { outline: 2px solid #ffaf00; }
+#gtrick-zone { position: absolute; transform: translate(-50%, -50%);
+  pointer-events: none; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; z-index: 15; }
+#gtrick-cards { display: flex; }
+#gtrick-cards .card { margin-left: -18px; }
+#gtrick-cards .card:first-child { margin-left: 0; }
+#gtrick-name { font-size: 12px; color: #ffe42d; font-weight: bold; }
+
+.flying-card { position: absolute; z-index: 50; pointer-events: none;
+  transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
+/* ── Mo Gong display ─────────────────────────────────────────────────────── */
+#mogong-display { background: rgba(8,28,12,0.9); border: 1px solid #3a6a44;
+  border-radius: 10px; padding: 16px 20px; }
+.mg-title { font-size: 14px; color: #ffe42d; font-weight: bold; margin-bottom: 4px; }
+.mg-player-name { font-size: 12px; color: #e1e4d7; margin-bottom: 2px; }
+.mg-cards { display: flex; margin-bottom: 8px; }
+.mg-cards .card { margin-left: -18px; transition: transform 0.12s; }
+.mg-cards .card:first-child { margin-left: 0; }
+.mg-cards .card:hover { transform: translateY(-8px); z-index: 5; }
+#mogong-continue-btn { background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 14px; padding: 8px 28px; cursor: pointer; margin-top: 4px; }
+#mogong-continue-btn:hover { background: #3a7a48; }
+
+.pass-badge { position: absolute; top: -22px; right: 4px; z-index: 20;
+  background: #444; color: #ffe42d; font-size: 10px; font-weight: bold;
+  padding: 2px 8px; border-radius: 3px; pointer-events: none;
+  animation: passFade 1.8s ease-out forwards; }
+@keyframes passFade {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
 
 /* ── Annotation ──────────────────────────────────────────────────────────── */
 #gann { position: absolute; text-align: center; pointer-events: none;
@@ -207,10 +235,33 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 <div id="game-screen" class="screen">
   <div id="gmain">
     <div id="gtrick-zone"></div>
+    <div id="mogong-display" style="display:none;position:absolute;transform:translate(-50%,-50%);z-index:20;
+      flex-direction:column;align-items:center;gap:12px;pointer-events:auto;"></div>
     <div id="gseats"></div>
     <div id="gann"></div>
+    <div id="pre-game-overlay" style="display:none;position:absolute;inset:0;
+      background:rgba(8,36,12,0.92);z-index:26;
+      align-items:center;justify-content:center;flex-direction:column;gap:10px;">
+      <div id="pgo-title" style="font-size:20px;color:#ffe42d;font-weight:bold">Red Ten Poker</div>
+      <div id="pgo-teams" style="font-size:13px;color:#e1e4d7;text-align:center;"></div>
+      <div id="pgo-players" style="font-size:13px;color:#e1e4d7;text-align:left;"></div>
+      <div id="pgo-da-gong" style="font-size:11px;color:#4bc84b;"></div>
+      <div id="pgo-mo-gong" style="font-size:11px;color:#e06060;"></div>
+      <div style="display:flex;gap:12px;margin-top:8px;">
+        <button id="pgo-start-btn" onclick="startNewHand()"
+          style="background:#285a34;border:1px solid #ffe42d;border-radius:7px;
+          color:#ffe42d;font-size:15px;padding:10px 24px;cursor:pointer;">
+          开始新牌局
+        </button>
+        <button id="pgo-exit-btn" onclick="exitToRoom()"
+          style="background:#162c1c;border:1px solid #3a6a44;border-radius:7px;
+          color:#829672;font-size:13px;padding:8px 20px;cursor:pointer;">
+          退出牌局
+        </button>
+      </div>
+    </div>
     <div id="game-over-banner" style="display:none;position:absolute;inset:0;
-      background:rgba(8,36,12,0.92);z-index:30;display:none;
+      background:rgba(8,36,12,0.92);z-index:30;
       align-items:center;justify-content:center;flex-direction:column;gap:14px;">
       <div style="font-size:22px;color:#ffe42d;font-weight:bold">Game Over</div>
       <a href="/" id="review-link" style="background:#285a34;border:1px solid #ffe42d;
@@ -248,9 +299,10 @@ let gameEvents = [];       // full event list (grows during game)
 let gameSnap = null;       // latest snapshot
 let myTurnMoves = null;    // legal_moves from your_turn msg, or null
 let lastActor   = null;    // player index who last acted
+let showingHandEnd = false; // true when hand_end overlay is visible
+let pendingResult = null;   // hand_end result waiting for mo_gong review
+let pendingSnap   = null;   // snapshot from the hand_end event
 let evLog = [];            // recent event descriptions
-
-const TRICK_OFF = [[0,100],[-110,65],[-130,-12],[0,-100],[130,-12],[110,65]];
 
 // ── Screen helpers ────────────────────────────────────────────────────────────
 function showScreen(id) {
@@ -335,10 +387,72 @@ async function claimSeat(seat) {
 }
 
 function startGame() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    const hands = 3;  // TODO: let user choose
-    ws.send(JSON.stringify({type: 'start_game', hands}));
+  initGameScreen();
+  showScreen('game-screen');
+  requestAnimationFrame(() => {
+    positionGSeats();
+    positionGTrickZone();
+    populatePreGameSeats();
+    showPreGameOverlay();
+  });
+}
+
+function populatePreGameSeats() {
+  for (let p = 0; p < 6; p++) {
+    const info = roomSeats[p] || {seat: p, mode: 'ai'};
+    const isHuman = info.mode === 'human';
+    const isMe = p === mySeat;
+    document.getElementById('gsname-' + p).textContent = 'P' + p + (isMe ? ' (You)' : '');
+    document.getElementById('gsbadge-' + p).textContent = isHuman ? '👤' : '🤖';
+    document.getElementById('gsc-hand-' + p).textContent = 'hand 0';
+    document.getElementById('gsc-cum-' + p).textContent = 'total 0';
   }
+}
+
+function showPreGameOverlay() {
+  document.getElementById('pgo-title').textContent = 'Red Ten Poker';
+  document.getElementById('pgo-teams').innerHTML = '';
+  document.getElementById('pgo-da-gong').textContent = '';
+  document.getElementById('pgo-mo-gong').textContent = '';
+
+  let html = '';
+  for (let p = 0; p < 6; p++) {
+    const info = roomSeats[p] || {seat: p, mode: 'ai'};
+    const isHuman = info.mode === 'human';
+    const isMe = p === mySeat;
+    const icon = isHuman ? '👤' : '🤖';
+    const name = 'P' + p + (isMe ? ' (You)' : '');
+    html += '<div style="margin:2px 0;">' + icon + ' ' + name + ' — Score: 0</div>';
+  }
+  document.getElementById('pgo-players').innerHTML = html;
+  document.getElementById('pre-game-overlay').style.display = 'flex';
+}
+
+function startNewHand() {
+  document.getElementById('pre-game-overlay').style.display = 'none';
+  hideMoGongDisplay();
+  if (showingHandEnd) {
+    showingHandEnd = false;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'continue_hand'}));
+    }
+  } else {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'start_game', hands: 3}));
+    }
+  }
+}
+
+function exitToRoom() {
+  document.getElementById('pre-game-overlay').style.display = 'none';
+  hideMoGongDisplay();
+  if (showingHandEnd) {
+    showingHandEnd = false;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'continue_hand'}));
+    }
+  }
+  showScreen('room-screen');
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -396,20 +510,41 @@ function handleMsg(msg) {
     case 'catch_up':
       gameEvents = msg.events;
       if (gameEvents.length) {
-        gameSnap = gameEvents[gameEvents.length - 1].snap;
+        const lastEv = gameEvents[gameEvents.length - 1];
+        gameSnap = lastEv.snap;
         initGameScreen();
         showScreen('game-screen');
         requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); renderGame(); });
+        if (lastEv.kind === 'hand_end' && lastEv.result) {
+          showHandEndOverlay(lastEv.result, lastEv.snap);
+        }
       }
       break;
 
     case 'game_event':
+      if (showingHandEnd) hideHandEndOverlay();
       gameEvents.push(msg.event);
       gameSnap = msg.event.snap;
       if (msg.event.player != null) lastActor = msg.event.player;
       evLog.push(msg.event.desc);
       if (evLog.length > 60) evLog.shift();
+
+      // Trigger card fly / pass animations
+      const ev = msg.event;
+      if ((ev.kind === 'lead' || ev.kind === 'action') && ev.move && ev.player != null) {
+        if (ev.move.pass) {
+          showPassBadge(ev.player);
+        } else if (ev.move.cards && ev.move.cards.length) {
+          animateCardPlay(ev.player, ev.move.cards);
+        }
+      }
+
       renderGame();
+      if (msg.event.kind === 'hand_end' && msg.event.result) {
+        pendingResult = msg.event.result;
+        pendingSnap = msg.event.snap;
+        showMoGongDisplay(msg.event.result);
+      }
       break;
 
     case 'your_turn':
@@ -479,17 +614,9 @@ function positionGSeats() {
 }
 
 function buildGTrickZone() {
-  const tz = document.getElementById('gtrick-zone');
-  tz.innerHTML = '';
-  for (let p = 0; p < 6; p++) {
-    const slot = document.createElement('div');
-    slot.className = 'gtrick-slot';
-    slot.id = 'gtslot-' + p;
-    slot.innerHTML = `<div id="gtcards-${p}"></div>
-                      <div class="slot-label">P${p}</div>`;
-    tz.appendChild(slot);
-  }
-  // positioning deferred — called after the screen is visible
+  document.getElementById('gtrick-zone').innerHTML = `
+    <div id="gtrick-cards"></div>
+    <div id="gtrick-name"></div>`;
 }
 
 function positionGTrickZone() {
@@ -499,14 +626,6 @@ function positionGTrickZone() {
   const tz = document.getElementById('gtrick-zone');
   tz.style.left = (W * 0.50) + 'px';
   tz.style.top  = (H * 0.50) + 'px';
-  const scale = Math.min(W / 1400, H / 900);
-  for (let p = 0; p < 6; p++) {
-    const slot = document.getElementById('gtslot-' + p);
-    if (slot) {
-      slot.style.left = (TRICK_OFF[p][0] * scale) + 'px';
-      slot.style.top  = (TRICK_OFF[p][1] * scale) + 'px';
-    }
-  }
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
@@ -576,13 +695,20 @@ function renderGame() {
     let name = p === mySeat ? `P${p} (You)` : `P${p}`;
     if (snap.fin[p]) {
       const pos = snap.fo.indexOf(p);
-      name += pos === 0 ? ' 大贡' : pos === snap.fo.length-1 ? ' 末贡' : ` #${pos+1}`;
+      name += pos === 0 ? ' 大贡' : ` #${pos+1}`;
     }
     nameEl.textContent = name;
     nameEl.style.color = snap.fin[p] ? '#4bc84b' : team==='RED' ? '#dc4848' : '#589bdc';
 
-    if (ident === 'Red') { badgeEl.textContent = '♥ Red'; badgeEl.style.color = '#dc4848'; }
-    else if (ident === 'Non-Red') { badgeEl.textContent = '○'; badgeEl.style.color = '#589bdc'; }
+    if (ident === 'Red') {
+      const rtc = (snap.rtc && typeof snap.rtc[p] === 'number') ? snap.rtc[p] : 0;
+      let hearts = '';
+      if (rtc >= 1) hearts += '♥';
+      if (rtc >= 2) hearts += '♥';
+      if (rtc >= 3) hearts += '♥';
+      badgeEl.textContent = hearts + (hearts ? ' ' : '') + 'Red';
+      badgeEl.style.color = '#dc4848';
+    } else if (ident === 'Non-Red') { badgeEl.textContent = '○'; badgeEl.style.color = '#589bdc'; }
     else { badgeEl.textContent = isHuman ? '👤' : ''; }
 
     // Scores
@@ -619,18 +745,20 @@ function renderGame() {
     document.getElementById('gcnt-' + p).textContent = trueCount + ' cards';
   }
 
-  // Trick zone
-  for (let p = 0; p < 6; p++) {
-    const el = document.getElementById('gtcards-' + p);
-    if (el) el.innerHTML = '';
-  }
-  const winnerP = snap.tw;
-  for (const [p, move] of snap.tp) {
-    if (!move || move.pass) continue;
-    const slot = document.getElementById('gtslot-' + p);
-    if (slot) slot.className = 'gtrick-slot' + (p === winnerP ? ' winner' : '');
-    const el = document.getElementById('gtcards-' + p);
-    if (el) el.innerHTML = move.cards.map(c => cardHtml(c, {})).join('');
+  // Trick zone — show only the last non-pass play (current best)
+  const lastPlay = [...snap.tp].reverse().find(([p, m]) => m && !m.pass);
+  const tzCards = document.getElementById('gtrick-cards');
+  const tzName = document.getElementById('gtrick-name');
+  if (lastPlay) {
+    const [p, move] = lastPlay;
+    tzCards.innerHTML = move.cards.map(c => cardHtml(c, {})).join('');
+    if (p === snap.tw) {
+      tzCards.querySelectorAll('.card').forEach(c => c.style.outline = '2px solid #ffaf00');
+    }
+    tzName.textContent = 'P' + p;
+  } else {
+    tzCards.innerHTML = '';
+    tzName.textContent = '';
   }
 
   // Score panel
@@ -662,6 +790,51 @@ function renderGame() {
   renderMyHandStrip();
 }
 
+function animateCardPlay(fromSeat, cards) {
+  const main = document.getElementById('gmain');
+  const seatEl = document.getElementById('gseat-' + fromSeat);
+  const targetEl = document.getElementById('gtrick-cards');
+  if (!main || !seatEl || !targetEl) return;
+
+  const mainRect = main.getBoundingClientRect();
+  const seatRect = seatEl.getBoundingClientRect();
+  const targetRect = targetEl.getBoundingClientRect();
+
+  const sx = seatRect.left + seatRect.width / 2 - mainRect.left;
+  const sy = seatRect.top + seatRect.height / 2 - mainRect.top;
+  const tx = targetRect.left + targetRect.width / 2 - mainRect.left;
+  const ty = targetRect.top + targetRect.height / 2 - mainRect.top;
+
+  cards.forEach((card, i) => {
+    const fly = document.createElement('div');
+    fly.className = 'card flying-card';
+    fly.innerHTML = cardHtml(card, {});
+    fly.style.left = sx + 'px';
+    fly.style.top  = sy + 'px';
+    main.appendChild(fly);
+
+    requestAnimationFrame(() => {
+      fly.style.left = (tx + i * 12) + 'px';
+      fly.style.top  = ty + 'px';
+    });
+
+    fly.addEventListener('transitionend', () => fly.remove());
+  });
+}
+
+function showPassBadge(seat) {
+  const seatEl = document.getElementById('gseat-' + seat);
+  if (!seatEl) return;
+  const old = seatEl.querySelector('.pass-badge');
+  if (old) old.remove();
+
+  const badge = document.createElement('div');
+  badge.className = 'pass-badge';
+  badge.textContent = 'Pass';
+  seatEl.appendChild(badge);
+  badge.addEventListener('animationend', () => badge.remove());
+}
+
 function renderMyHandStrip() {
   const msg = document.getElementById('turn-msg');
   if (!myTurnMoves) {
@@ -686,13 +859,15 @@ function findMatchingMove() {
   if (!myTurnMoves || !gameSnap) return null;
   const hand = gameSnap.hands[mySeat] || [];
   const selCards = [...selectedCardIdxs].map(i => hand[i]).filter(Boolean);
-  const selKey = selCards.map(cardKey).sort().join(',');
+  // Match by sorted rank labels — ignores suit, handles 3-deck duplicates
+  const selRanks = selCards.map(c => c.rl).sort().join(',');
 
   for (const m of myTurnMoves) {
     if (m.is_pass) continue;
-    const mCards = m.cards ? m.cards.cards : [];
+    const mCards = m.cards || [];
     if (mCards.length !== selCards.length) continue;
-    if (mCards.map(cardKey).sort().join(',') === selKey) return m;
+    const mRanks = mCards.map(c => c.rl).sort().join(',');
+    if (mRanks === selRanks) return m;
   }
   return null;
 }
@@ -729,6 +904,119 @@ function showGameOverBanner() {
   banner.style.display = 'flex';
 }
 
+function showMoGongDisplay(result) {
+  const mg = result.mo_gong || [];
+  const hands = result.mg_hands || {};
+
+  // If no mo_gong players (all finished), skip to result overlay
+  const hasCards = mg.some(p => hands[String(p)] && hands[String(p)].length > 0);
+  if (!hasCards) {
+    showHandEndOverlay(result, pendingSnap);
+    return;
+  }
+
+  const display = document.getElementById('mogong-display');
+
+  let html = '<div class="mg-title">Hand Over — 末贡 Remaining Cards</div>';
+
+  mg.forEach(p => {
+    const cards = hands[String(p)] || [];
+    if (!cards.length) return;
+    // Sort cards by rank, then suit
+    const sorted = [...cards].sort((a, b) => {
+      const rd = (RANK_SORT[a.rl] ?? 0) - (RANK_SORT[b.rl] ?? 0);
+      if (rd !== 0) return rd;
+      return (SUIT_SORT[a.s] ?? 0) - (SUIT_SORT[b.s] ?? 0);
+    });
+
+    const scoringCount = sorted.filter(c => c.sv > 0).length;
+    html += '<div class="mg-player-name">P' + p + ' (' + sorted.length + ' cards';
+    if (scoringCount > 0) html += ', <span style="color:#ffdc3c">' + scoringCount + ' scoring</span>';
+    html += ')</div>';
+    html += '<div class="mg-cards">' + sorted.map(c => cardHtml(c, {})).join('') + '</div>';
+  });
+
+  html += '<button id="mogong-continue-btn" onclick="onMoGongContinue()">继续</button>';
+
+  display.innerHTML = html;
+  display.style.display = 'flex';
+  positionMoGongDisplay();
+}
+
+function hideMoGongDisplay() {
+  document.getElementById('mogong-display').style.display = 'none';
+}
+
+function onMoGongContinue() {
+  hideMoGongDisplay();
+  if (pendingResult && pendingSnap) {
+    showHandEndOverlay(pendingResult, pendingSnap);
+    pendingResult = null;
+    pendingSnap = null;
+  }
+}
+
+function positionMoGongDisplay() {
+  const main = document.getElementById('gmain');
+  if (!main) return;
+  const W = main.clientWidth, H = main.clientHeight;
+  const tz = document.getElementById('mogong-display');
+  tz.style.left = (W * 0.50) + 'px';
+  tz.style.top  = (H * 0.50) + 'px';
+}
+
+function showHandEndOverlay(result, snap) {
+  showingHandEnd = true;
+
+  const hn = snap ? snap.hn : '?';
+  document.getElementById('pgo-title').textContent = 'Hand ' + hn + ' Result';
+
+  const tp = result.team_pts || {};
+  document.getElementById('pgo-teams').innerHTML =
+    '<span style="color:#dc4848;">Red: ' + (tp.RED || 0) + ' pts</span>' +
+    ' &nbsp;vs&nbsp; ' +
+    '<span style="color:#589bdc;">Non-Red: ' + (tp.NON_RED || 0) + ' pts</span>';
+
+  const scores = result.scores || [];
+  const dg = result.da_gong;
+  const mg = result.mo_gong || [];
+
+  let html = '';
+  for (let p = 0; p < 6; p++) {
+    const info = roomSeats[p] || {seat: p, mode: 'ai'};
+    const isHuman = info.mode === 'human';
+    const isMe = p === mySeat;
+    const isRed = result.red && result.red.includes(p);
+    const icon = isHuman ? '👤' : '🤖';
+    const name = 'P' + p + (isMe ? ' (You)' : '');
+    const col = isRed ? '#dc4848' : '#589bdc';
+
+    let tag = '';
+    if (dg === p) tag = ' ← 大贡';
+    else if (mg.includes(p)) tag = ' ← 末贡';
+
+    html += '<div style="margin:2px 0;color:' + col + '">' + icon + ' ' + name + ': ' + (scores[p] || 0) + ' pts' + tag + '</div>';
+  }
+  document.getElementById('pgo-players').innerHTML = html;
+
+  document.getElementById('pgo-da-gong').textContent =
+    dg !== null && dg !== undefined ? '大贡: P' + dg : '';
+
+  if (mg && mg.length) {
+    document.getElementById('pgo-mo-gong').textContent = '末贡: ' + mg.map(p => 'P' + p).join(', ');
+  } else {
+    document.getElementById('pgo-mo-gong').textContent = '';
+  }
+
+  document.getElementById('pre-game-overlay').style.display = 'flex';
+}
+
+function hideHandEndOverlay() {
+  showingHandEnd = false;
+  hideMoGongDisplay();
+  document.getElementById('pre-game-overlay').style.display = 'none';
+}
+
 function playSelected() {
   const match = findMatchingMove();
   if (!match) return;
@@ -751,6 +1039,7 @@ function sendMove(idx) {
 window.addEventListener('resize', () => {
   positionGSeats();
   positionGTrickZone();
+  positionMoGongDisplay();
   if (gameSnap) renderGame();
 });
 </script>

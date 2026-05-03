@@ -180,6 +180,9 @@ async def ws_game(websocket: WebSocket, room_code: str, seat: int):
                 if move_idx is not None:
                     seat_ctrl.submit_move(int(move_idx))
 
+            elif msg_type == "continue_hand":
+                room.signal_continue()
+
     except WebSocketDisconnect:
         seat_ctrl.detach()
         room.broadcast({"type": "seat_update", "seat": seat, "mode": "ai"})

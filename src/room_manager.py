@@ -20,13 +20,14 @@ import queue
 import random
 import string
 import threading
+import time
 from typing import Optional, TYPE_CHECKING
 
 from hand import Player
 from state import GameState
 from moves import Move
 from gui_renderer import GUIRenderer, GameEvent
-from serializers import ser_event, ser_event_pov, ser_move
+from serializers import ser_event, ser_event_pov, ser_move, ser_card
 
 if TYPE_CHECKING:
     from fastapi import WebSocket
@@ -81,6 +82,7 @@ class SeatController(Player):
 
     def choose_action(self, state: GameState, legal_moves: list[Move]) -> Move:
         if not self.is_human:
+            time.sleep(random.uniform(1.0, 3.0))
             return self.ai_player.choose_action(state, legal_moves)
 
         # Send legal moves to the human client.
@@ -88,7 +90,7 @@ class SeatController(Player):
             "type": "your_turn",
             "legal_moves": [
                 {"idx": i, "desc": str(m) if not m.is_pass() else "Pass",
-                 "is_pass": m.is_pass(), "cards": ser_move(m)}
+                 "is_pass": m.is_pass(), "cards": [ser_card(c) for c in m.cards]}
                 for i, m in enumerate(legal_moves)
             ],
         })
@@ -139,6 +141,7 @@ class GameRoom:
         self.seats: list[SeatController] = []
         self._renderer: Optional[LiveRenderer] = None
         self._game_thread: Optional[threading.Thread] = None
+        self._continue_event = threading.Event()
 
         from session import make_players
         for i, ai in enumerate(make_players(ai_tier, n_samples=n_samples)):
@@ -174,6 +177,15 @@ class GameRoom:
 
     # ── game lifecycle ────────────────────────────────────────────────────────
 
+    def signal_continue(self) -> None:
+        """Signal the game thread to continue to the next hand."""
+        self._continue_event.set()
+
+    def _wait_for_continue(self, timeout: float = 120.0) -> None:
+        """Block until a human signals continue, or timeout fires."""
+        self._continue_event.wait(timeout=timeout)
+        self._continue_event.clear()
+
     def start(self, num_hands: int = 3) -> None:
         if self.status != "lobby":
             return
@@ -187,7 +199,8 @@ class GameRoom:
     def _run(self, num_hands: int) -> None:
         from session import GameSession
         try:
-            GameSession(self.seats, self._renderer).run(num_hands=num_hands)
+            GameSession(self.seats, self._renderer,
+                        continue_cb=self._wait_for_continue).run(num_hands=num_hands)
         finally:
             self.status = "done"
             replay = [ser_event(e) for e in self._renderer.events]

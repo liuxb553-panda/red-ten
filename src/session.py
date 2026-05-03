@@ -1,17 +1,22 @@
 from __future__ import annotations
 import random
+import time
 from hand import Hand, Player, RandomPlayer
 from rule_player import RuleBasedPlayer
 from logger import GameLogger
 
 
 class GameSession:
-    def __init__(self, players: list[Player], logger: GameLogger):
+    def __init__(self, players: list[Player], logger: GameLogger,
+                 hand_pause: float = 0.0,
+                 continue_cb: callable = None):
         assert len(players) == 6
         self.players = players
         self.logger = logger
         self.cumulative_scores = [0] * 6
         self.hand_number = 0
+        self.hand_pause = hand_pause
+        self._continue_cb = continue_cb
 
     def run(self, num_hands: int):
         self.logger.log_session_start(num_hands)
@@ -27,6 +32,12 @@ class GameSession:
             for p in range(6):
                 self.cumulative_scores[p] += result.final_scores[p]
             self.logger.log_hand_summary(result, self.cumulative_scores)
+
+            if i < num_hands - 1:
+                if self._continue_cb:
+                    self._continue_cb()
+                elif self.hand_pause > 0:
+                    time.sleep(self.hand_pause)
 
             if result.da_gong is not None:
                 first_player = result.da_gong

@@ -4,7 +4,7 @@ from enum import IntEnum, auto
 from typing import List, Optional
 from itertools import combinations
 
-from cards import Card, Rank, Suit
+from cards import Card, Rank, Suit, _SINGLE_RANK_MAP
 
 
 class CardType(IntEnum):
@@ -145,7 +145,7 @@ def _bomb_key(cards: tuple[Card, ...]) -> tuple[int, int, int]:
     level = _NORMAL_COUNT_TO_LEVEL.get(n)
     if level is None:
         raise ValueError(f"Invalid bomb count: {n}")
-    rank_val = c.single_rank()
+    rank_val = _SINGLE_RANK_MAP[int(c.rank)]
     return (level, n, rank_val)
 
 
@@ -165,10 +165,10 @@ def _is_valid_bomb(cards: list[Card]) -> bool:
     if len(sml_jokers) == n and n in (2, 3):
         return True
 
-    # Normal bomb: 4+ cards of identical rank (jokers and red tens not mixed in)
+    # Normal bomb: 4+ cards of identical rank (no jokers)
     if n < 4:
         return False
-    if any(c.is_joker() or c.is_red_ten() for c in cards):
+    if any(c.is_joker() for c in cards):
         return False
     ranks = {c.rank for c in cards}
     return len(ranks) == 1
@@ -360,11 +360,12 @@ def get_legal_moves(hand: list[Card], current_best: Optional[Move]) -> list[Move
     # Bombs (always generated; filtered if following another bomb)
     _add_bomb_combos(hand, all_moves, current_best, leading)
 
-    # Deduplicate by card frozenset (same cards in different order = same move)
-    seen: set[frozenset] = set()
+    # Deduplicate by (type, card count, frozenset) — type+count needed
+    # because with 3 decks identical cards collapse to same frozenset
+    seen: set[tuple] = set()
     unique: list[Move] = []
     for m in all_moves:
-        key = frozenset(m.cards)
+        key = (m.type, len(m.cards), frozenset(m.cards))
         if key not in seen:
             seen.add(key)
             unique.append(m)
@@ -376,37 +377,38 @@ def _add_same_rank_combos(hand, count, ctype, out, current_best, leading):
     from collections import defaultdict
     by_rank: dict[Rank, list[Card]] = defaultdict(list)
     for c in hand:
-        if not c.is_joker() and not c.is_red_ten():
-            by_rank[c.rank].append(c)
+        by_rank[c.rank].append(c)
     for rank, cards in by_rank.items():
         if len(cards) < count:
             continue
-        for combo in combinations(cards, count):
-            m = Move(ctype, combo, combo[0].single_rank())
-            if leading or (current_best and m.beats(current_best)):
-                out.append(m)
+        # Only one combo per rank — all combos of same rank are equivalent
+        combo = tuple(list(cards)[:count])
+        m = Move(ctype, combo, _SINGLE_RANK_MAP[int(combo[0].rank)])
+        if leading or (current_best and m.beats(current_best)):
+            out.append(m)
 
 
 def _add_triple_combos(hand, out, current_best, leading):
     from collections import defaultdict
     by_rank: dict[Rank, list[Card]] = defaultdict(list)
     for c in hand:
-        if not c.is_joker() and not c.is_red_ten():
+        if not c.is_joker():
             by_rank[c.rank].append(c)
     for rank, cards in by_rank.items():
         if len(cards) < 3:
             continue
-        for combo in combinations(cards, 3):
-            m = Move(CardType.TRIPLE, combo, combo[0].single_rank())
-            if leading or (current_best and m.beats(current_best)):
-                out.append(m)
+        # Only one combo per rank
+        combo = tuple(list(cards)[:3])
+        m = Move(CardType.TRIPLE, combo, _SINGLE_RANK_MAP[int(combo[0].rank)])
+        if leading or (current_best and m.beats(current_best)):
+            out.append(m)
 
 
 def _add_triple_pair_combos(hand, out, current_best, leading):
     from collections import defaultdict
     by_rank: dict[Rank, list[Card]] = defaultdict(list)
     for c in hand:
-        if not c.is_joker() and not c.is_red_ten():
+        if not c.is_joker():
             by_rank[c.rank].append(c)
 
     triple_ranks = [r for r, cards in by_rank.items() if len(cards) >= 3]
@@ -414,7 +416,7 @@ def _add_triple_pair_combos(hand, out, current_best, leading):
 
     for tr in triple_ranks:
         for triple_combo in combinations(by_rank[tr], 3):
-            triple_rank_val = triple_combo[0].single_rank()
+            triple_rank_val = _SINGLE_RANK_MAP[int(triple_combo[0].rank)]
             if not leading and current_best and current_best.type == CardType.TRIPLE_PAIR:
                 if triple_rank_val <= current_best.rank:
                     continue
@@ -574,10 +576,10 @@ def _add_bomb_combos(hand, out, current_best, leading):
                 if leading or not current_best or current_best.is_pass() or m.beats(current_best):
                     out.append(m)
 
-    # Normal bombs: 4+ same rank (no jokers, no red tens)
+    # Normal bombs: 4+ same rank (no jokers; red tens count as regular tens)
     by_rank: dict[Rank, list[Card]] = defaultdict(list)
     for c in hand:
-        if not c.is_joker() and not c.is_red_ten():
+        if not c.is_joker():
             by_rank[c.rank].append(c)
 
     for rank, cards in by_rank.items():
