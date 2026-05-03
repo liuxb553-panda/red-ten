@@ -48,6 +48,7 @@ def ser_snap(s: GameSnapshot) -> dict:
         "ts":      s.trick_scores,
         "cs":      s.cumulative_scores,
         "ids":     [i.value if i else None for i in s.identities],
+        "rtc":     s.red_ten_counts,
         "fin":     s.finished,
         "fo":      s.finish_order,
         "tp":      [[p, ser_move(m)] for p, m in s.trick_plays],
@@ -68,9 +69,11 @@ def ser_result(r: Optional[HandResult]) -> Optional[dict]:
             "RED":     r.final_team_scores[Team.RED],
             "NON_RED": r.final_team_scores[Team.NON_RED],
         },
-        "scores":   r.final_scores,
-        "da_gong":  r.da_gong,
-        "mo_gong":  r.mo_gong,
+        "scores":    r.final_scores,
+        "da_gong":   r.da_gong,
+        "mo_gong":   r.mo_gong,
+        "mg_hands":  {str(p): [ser_card(c) for c in cards]
+                      for p, cards in r.mo_gong_hands.items()},
     }
 
 
@@ -83,6 +86,7 @@ def ser_snap_pov(s: GameSnapshot, pov: int) -> dict:
         "ts":     s.trick_scores,
         "cs":     s.cumulative_scores,
         "ids":    [i.value if i else None for i in s.identities],
+        "rtc":    s.red_ten_counts,
         "fin":    s.finished,
         "fo":     s.finish_order,
         "tp":     [[p, ser_move(m)] for p, m in s.trick_plays],

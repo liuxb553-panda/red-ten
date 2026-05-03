@@ -504,10 +504,18 @@ def main():
                     elif btn.key == "prev":
                         ev_idx = max(ev_idx - 1, 0); last_step = now
                     elif btn.key in ("play", "pause"):
-                        playing = not playing; paused_at_hand_end = False; last_step = now
+                        if paused_at_hand_end:
+                            paused_at_hand_end = False
+                            ev_idx = min(ev_idx + 1, len(events) - 1)
+                            playing = True
+                        else:
+                            playing = not playing
+                        last_step = now
                     elif btn.key == "next":
+                        if paused_at_hand_end:
+                            paused_at_hand_end = False
                         ev_idx = min(ev_idx + 1, len(events) - 1)
-                        paused_at_hand_end = False; last_step = now
+                        last_step = now
                     elif btn.key == "slower":
                         speed_idx = min(speed_idx + 1, len(SPEED_LEVELS) - 1)
                     elif btn.key == "faster":
@@ -517,10 +525,20 @@ def main():
                 if evt.key in (pygame.K_q, pygame.K_ESCAPE):
                     pygame.quit(); sys.exit()
                 elif evt.key == pygame.K_SPACE:
-                    playing = not playing; paused_at_hand_end = False; last_step = now
+                    if paused_at_hand_end:
+                        paused_at_hand_end = False
+                        ev_idx = min(ev_idx + 1, len(events) - 1)
+                        playing = True
+                    else:
+                        playing = not playing
+                    last_step = now
                 elif evt.key == pygame.K_RIGHT:
-                    ev_idx = min(ev_idx + 1, len(events) - 1)
-                    paused_at_hand_end = False; last_step = now
+                    if paused_at_hand_end:
+                        paused_at_hand_end = False
+                        ev_idx = min(ev_idx + 1, len(events) - 1)
+                    else:
+                        ev_idx = min(ev_idx + 1, len(events) - 1)
+                    last_step = now
                 elif evt.key == pygame.K_LEFT:
                     ev_idx = max(ev_idx - 1, 0); last_step = now
                 elif evt.key == pygame.K_UP:
@@ -530,14 +548,20 @@ def main():
                 elif evt.key == pygame.K_r:
                     ev_idx = 0; playing = False; paused_at_hand_end = False
 
-        # Auto-advance
+        # Auto-advance — but never auto-advance past hand_end while result is showing
         delay = SPEED_LEVELS[speed_idx]
         if playing and not paused_at_hand_end and now - last_step >= delay:
             if ev_idx < len(events) - 1:
-                ev_idx   += 1
-                last_step = now
+                # Check BEFORE advancing so we can pause ON the hand_end event
                 if events[ev_idx].kind == "hand_end":
                     paused_at_hand_end = True
+                    playing = False
+                else:
+                    ev_idx   += 1
+                    last_step = now
+                    if events[ev_idx].kind == "hand_end":
+                        paused_at_hand_end = True
+                        playing = False
             else:
                 playing = False
 

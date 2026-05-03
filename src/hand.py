@@ -68,7 +68,7 @@ class Hand:
         return self._compute_result()
 
     def _is_hand_over(self) -> bool:
-        return len(self.state.finished_players()) >= 5
+        return len(self.state.finished_players()) >= 6
 
     def _play_trick(self, leader: int) -> TrickResult:
         self._trick_num += 1
@@ -146,8 +146,8 @@ class Hand:
         for card in move.cards:
             hand.remove(card)
             self.state.played_cards.append(card)
-            if card.is_red_ten() and not self.state.player_statuses[player].identity_revealed:
-                self.state.player_statuses[player].identity_revealed = True
+            if card.is_red_ten():
+                self.state.player_statuses[player].red_ten_count += 1
                 self.logger.log_identity_reveal(player)
         self.state.player_statuses[player].cards_remaining = len(hand)
         if len(hand) == 0 and not self.state.player_statuses[player].finished:
@@ -203,6 +203,7 @@ class Hand:
                         return TerminalKind.GUAN_REN
                     else:
                         self.logger.log_mo_gong(still_holding)
+                        return TerminalKind.NORMAL
 
         if non_done:
             still_holding = [p for p in red if not self.state.player_statuses[p].finished]
@@ -214,6 +215,7 @@ class Hand:
                         return TerminalKind.GUAN_REN
                     else:
                         self.logger.log_mo_gong(still_holding)
+                        return TerminalKind.NORMAL
 
         return None
 
@@ -221,6 +223,8 @@ class Hand:
         red  = self.state.red_team()
         non  = self.state.non_red_team()
         terminal = self.state.terminal or TerminalKind.NORMAL
+
+        mg_hands = {p: list(self.state.hands[p]) for p in self.state.mo_gong}
 
         base = {
             Team.RED:     sum(self.state.trick_scores[p] for p in red),
@@ -234,6 +238,7 @@ class Hand:
             return HandResult(terminal=terminal, finish_order=self.state.finish_order,
                               red_team=red, non_red_team=non,
                               da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
+                              mo_gong_hands=mg_hands,
                               da_gong_mo_gong_same_team=True,
                               base_scores=base, final_team_scores=final_team, final_scores=final)
 
@@ -245,8 +250,18 @@ class Hand:
             return HandResult(terminal=terminal, finish_order=self.state.finish_order,
                               red_team=red, non_red_team=non,
                               da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
+                              mo_gong_hands=mg_hands,
                               da_gong_mo_gong_same_team=True,
                               base_scores=base, final_team_scores=final_team, final_scores=final)
+
+        # Transfer scoring cards from unfinished players to opposing team
+        for p in range(6):
+            if not self.state.player_statuses[p].finished:
+                p_team = self.state.player_statuses[p].team
+                opp = Team.NON_RED if p_team == Team.RED else Team.RED
+                for c in self.state.hands[p]:
+                    if c.is_scoring():
+                        base[opp] += c.score_value()
 
         # Normal: ±60 adjustment
         same_team = True
@@ -272,5 +287,6 @@ class Hand:
         return HandResult(terminal=terminal, finish_order=self.state.finish_order,
                           red_team=red, non_red_team=non,
                           da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
+                          mo_gong_hands=mg_hands,
                           da_gong_mo_gong_same_team=same_team,
                           base_scores=base, final_team_scores=final_team, final_scores=final)

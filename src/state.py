@@ -24,6 +24,7 @@ class HandResult:
     non_red_team: list[int]
     da_gong: Optional[int]
     mo_gong: list[int]
+    mo_gong_hands: dict               # {player_id: [remaining cards]}
     da_gong_mo_gong_same_team: bool
     base_scores: dict                 # {Team.RED: int, Team.NON_RED: int}
     final_team_scores: dict           # {Team.RED: int, Team.NON_RED: int}
@@ -33,12 +34,16 @@ class HandResult:
 @dataclass
 class PlayerStatus:
     cards_remaining: int = 27
-    identity_revealed: bool = False  # True once they've played a red ten
+    red_ten_count: int = 0  # how many red tens this player has played (max 3)
     finished: bool = False
     finish_position: Optional[int] = None  # 1-indexed
 
     # Inferred team (None until revealed or fully inferred)
     team: Optional[Team] = None
+
+    @property
+    def identity_revealed(self) -> bool:
+        return self.red_ten_count > 0
 
 
 @dataclass
@@ -72,7 +77,7 @@ class GameState:
     # Index i = which player holds red_ten i; set when revealed or at end
 
     def revealed_red_ten_count(self) -> int:
-        return sum(1 for p in range(6) if self.player_statuses[p].identity_revealed)
+        return sum(self.player_statuses[p].red_ten_count for p in range(6))
 
     def all_red_tens_revealed(self) -> bool:
         return self.revealed_red_ten_count() >= 3

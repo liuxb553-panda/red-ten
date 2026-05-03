@@ -23,6 +23,7 @@ class GameSnapshot:
     identities: list[Optional[Team]]    # None = unknown
     finished: list[bool]
     finish_order: list[int]             # in order of finishing
+    red_ten_counts: list[int]           # how many red tens each player has played
     # Current trick
     trick_plays: list[tuple[int, Move]] # (player, move) for current trick
     trick_winner: Optional[int]         # set after trick_end
@@ -66,6 +67,7 @@ class GUIRenderer(GameLogger):
         self._trick_winner: Optional[int] = None
         self._hand_number: int = 0
         self._trick_number: int = 0
+        self._red_ten_counts: list[int] = [0] * 6
         self._teams: list[Optional[Team]] = [None] * 6  # actual teams (set at deal time)
 
     def _snap(self) -> GameSnapshot:
@@ -76,6 +78,7 @@ class GUIRenderer(GameLogger):
             identities=list(self._identities),
             finished=list(self._finished),
             finish_order=list(self._finish_order),
+            red_ten_counts=list(self._red_ten_counts),
             trick_plays=list(self._trick_plays),
             trick_winner=self._trick_winner,
             hand_number=self._hand_number,
@@ -106,6 +109,7 @@ class GUIRenderer(GameLogger):
         self._finished = [False] * 6
         self._finish_order = []
         self._identities = [None] * 6
+        self._red_ten_counts = [0] * 6
         self._emit("hand_start", f"Hand {hand_num} — P{first_player} goes first ({reason})",
                    player=first_player)
 
@@ -157,6 +161,7 @@ class GUIRenderer(GameLogger):
 
     def log_identity_reveal(self, player: int):
         self._identities[player] = Team.RED
+        self._red_ten_counts[player] += 1
         self._emit("reveal", f"★ P{player} revealed: Red Team", player=player)
 
     def log_gui_zhu(self, finished_player: int, new_leader: int, case: int):
