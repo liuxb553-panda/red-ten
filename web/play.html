@@ -99,7 +99,8 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 #g-score-table .pname { min-width: 90px; }
 #g-score-table .pts { text-align: right; min-width: 40px; }
 #gevlog-label { font-size: 10px; color: #829672; margin-top: 8px; margin-bottom: 3px; }
-#gevlog { flex: 1; overflow: hidden; font-size: 10.5px; font-family: monospace; line-height: 1.55; }
+#gevlog { flex: 1; overflow: hidden; font-size: 10.5px; font-family: monospace; line-height: 1.55;
+  display: flex; flex-direction: column; justify-content: flex-end; }
 #gevlog .ev { color: #829672; }
 #gevlog .ev.cur { color: #ffe42d; }
 
@@ -855,13 +856,10 @@ function renderGame() {
   }
   scoreEl.innerHTML = sh;
 
-  // Event log
+  // Event log — flex-end anchors to bottom; show last 60, newest at bottom
   const logEl = document.getElementById('gevlog');
-  const lineH = 16;
-  const vis = Math.max(4, Math.floor(logEl.clientHeight / lineH));
-  const slice = evLog.slice(-vis);
-  logEl.innerHTML = slice.map((d, i) =>
-    `<div class="ev${i===slice.length-1?' cur':''}">${d.slice(0,50)}</div>`
+  logEl.innerHTML = evLog.map((d, i) =>
+    `<div class="ev${i===evLog.length-1?' cur':''}">${d.slice(0,50)}</div>`
   ).join('');
 
   // Action bar
