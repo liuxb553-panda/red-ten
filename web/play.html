@@ -809,17 +809,14 @@ function renderGame() {
     document.getElementById('gcnt-' + p).textContent = trueCount + ' cards';
   }
 
-  // Trick zone — show all plays in the current trick
+  // Trick zone — show all plays in the current trick in chronological order
   const tzEl = document.getElementById('gtrick-zone');
   tzEl.innerHTML = '';
-  const bestPlay = [...snap.tp].reverse().find(([, m]) => m && !m.pass);
-  const playedMap = new Map(snap.tp.map(([p, m]) => [p, m]));
-  const displayOrder = snap.tp.map(([p]) => p);
+  const bestIdx = snap.tp.reduce((bi, [, m], i) => m && !m.pass ? i : bi, -1);
   let gtrickCardsAssigned = false;
-  for (const p of displayOrder) {
-    const move = playedMap.get(p);
+  snap.tp.forEach(([p, move], i) => {
     const isPass = !move || move.pass;
-    const isBest = bestPlay && p === bestPlay[0];
+    const isBest = i === bestIdx;
     const playDiv = document.createElement('div');
     playDiv.className = 'trick-play' + (isBest ? ' best' : '') + (isPass ? ' pass' : '');
     const label = document.createElement('div');
@@ -840,7 +837,7 @@ function renderGame() {
       playDiv.appendChild(cardsDiv);
     }
     tzEl.appendChild(playDiv);
-  }
+  });
 
   // Score panel
   const scoreEl = document.getElementById('g-score-table');
