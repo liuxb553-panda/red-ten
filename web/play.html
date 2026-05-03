@@ -196,6 +196,47 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 #conn-badge.ok  { color: #4bc84b; border: 1px solid #4bc84b; }
 #conn-badge.off { color: #e06060; border: 1px solid #e06060; }
 
+/* ── AI Personality Speech Bubbles ──────────────────────────────────────── */
+.ai-bubble {
+  position: absolute; bottom: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%);
+  background: #fffde8; color: #1a1a1a; font-size: 11px; font-weight: bold;
+  line-height: 1.35; padding: 5px 10px; border-radius: 8px;
+  border: 1.5px solid #ccc8a0; box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  pointer-events: none; z-index: 30; white-space: normal;
+  max-width: 160px; text-align: center;
+  animation: bubblePop 0.18s cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+.ai-bubble::after {
+  content: ''; position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #fffde8; border-bottom: none;
+}
+.gseat.anchor-right .ai-bubble {
+  left: auto; right: 50%; transform: translateX(50%); animation-name: bubblePopRight;
+}
+.gseat.anchor-right .ai-bubble::after { left: auto; right: 30%; }
+.gseat.anchor-top .ai-bubble {
+  bottom: auto; top: calc(100% + 10px);
+  animation-name: bubblePopDown;
+}
+.gseat.anchor-top .ai-bubble::after {
+  top: auto; bottom: 100%;
+  border-top-color: transparent; border-bottom: 6px solid #fffde8; border-top: none;
+}
+@keyframes bubblePopDown {
+  from { opacity: 0; transform: translateX(-50%) scale(0.75); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+@keyframes bubblePop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.75); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+@keyframes bubblePopRight {
+  from { opacity: 0; transform: translateX(50%) scale(0.75); }
+  to   { opacity: 1; transform: translateX(50%) scale(1); }
+}
+
 /* ── Debug flag button (dev tool) ────────────────────────────────────────── */
 #debug-btn { position: fixed; top: 8px; left: 12px; font-size: 10px;
   padding: 3px 8px; border-radius: 4px; background: #162c1c;
@@ -611,6 +652,7 @@ function handleMsg(msg) {
 
     case 'game_started':
       roomSeats = msg.seats;
+      assignCharacters();
       initGameScreen();
       showScreen('game-screen');
       requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); });
@@ -621,6 +663,7 @@ function handleMsg(msg) {
       if (gameEvents.length) {
         const lastEv = gameEvents[gameEvents.length - 1];
         gameSnap = lastEv.snap;
+        assignCharacters();
         initGameScreen();
         showScreen('game-screen');
         requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); renderGame(); });
@@ -649,6 +692,30 @@ function handleMsg(msg) {
         }
       }
       if (ev.kind === 'trick_end') Sound.trickEnd();
+
+      // AI personality speech bubbles
+      if (ev.player != null) {
+        if (ev.kind === 'lead' || ev.kind === 'action') {
+          // Priority: flush any queued hand_end chatter, speak immediately
+          if (ev.move?.bomb)      showAIBubble(ev.player, 'bomb',      400, true);
+          else if (ev.move?.pass) showAIBubble(ev.player, 'pass',      400, false);
+          else if (ev.move)       showAIBubble(ev.player, 'play',      400, false);
+        } else if (ev.kind === 'trick_end' && ev.winner != null) {
+          showAIBubble(ev.winner, 'trick_win', 600, false);
+        }
+      }
+      if (ev.kind === 'hand_end' && ev.result) {
+        const redSeats = new Set(ev.result.red || []);
+        const redWon = (ev.result.team_pts?.RED ?? 0) > (ev.result.team_pts?.NON_RED ?? 0);
+        // Stagger visuals 1200 ms apart; TTS queue plays each voice after the previous finishes
+        let slot = 0;
+        for (let p = 0; p < 6; p++) {
+          if (p === mySeat) continue;
+          const won = redSeats.has(p) ? redWon : !redWon;
+          showAIBubble(p, won ? 'hand_win' : 'hand_lose', 800 + slot * 1200);
+          slot++;
+        }
+      }
 
       renderGame();
       if (msg.event.kind === 'hand_end' && msg.event.result) {
@@ -725,9 +792,10 @@ function positionGSeats() {
     const fi = CCW_SLOT[offset];
     seat.style.left = (FRAC[fi][0] * 100) + '%';
     seat.style.top  = (FRAC[fi][1] * 100) + '%';
-    seat.classList.remove('anchor-left', 'anchor-right');
+    seat.classList.remove('anchor-left', 'anchor-right', 'anchor-top');
     if (offset === 4 || offset === 5) seat.classList.add('anchor-left');
     if (offset === 1 || offset === 2) seat.classList.add('anchor-right');
+    if (offset === 3)                 seat.classList.add('anchor-top');
   }
 }
 
@@ -796,7 +864,7 @@ function renderGame() {
 
     // Border class
     const offset = (mySeat - p + 6) % 6;
-    const anchor = (offset===4||offset===5) ? ' anchor-left' : (offset===1||offset===2) ? ' anchor-right' : '';
+    const anchor = (offset===4||offset===5) ? ' anchor-left' : (offset===1||offset===2) ? ' anchor-right' : (offset===3) ? ' anchor-top' : '';
     let cls = 'gseat' + anchor;
     if (p === mySeat) cls += ' mine';
     else if (ident === 'Red') cls += ' red';
@@ -946,7 +1014,12 @@ function animateCardPlay(fromSeat, cards) {
       fly.style.top  = ty + 'px';
     });
 
-    fly.addEventListener('transitionend', () => fly.remove());
+    // fallback: remove after transition time in case transitionend doesn't fire
+    // (happens when start == end position, e.g. seat directly over trick zone)
+    let _flyDone = false;
+    const removeFly = () => { if (!_flyDone) { _flyDone = true; fly.remove(); } };
+    fly.addEventListener('transitionend', removeFly);
+    setTimeout(removeFly, 700);
   });
 }
 
@@ -1182,6 +1255,220 @@ function showDebugToast(msg) {
   t.textContent = msg; t.style.display = 'block';
   clearTimeout(t._tid);
   t._tid = setTimeout(() => { t.style.display = 'none'; }, 6000);
+}
+
+// ── AI Personality Speech Bubbles ────────────────────────────────────────────
+
+const AI_CHARACTER_POOL = [
+  { // 0 — Mike (Rounders poker bravado)
+    name: 'Mike', slug: 'mike', lang: 'en-US', pitch: 1.0, rate: 0.8,
+    play:      ['I can see your tells.', 'Right move, every time.', 'Patience wins pots.', 'Set up, paid off.'],
+    pass:      ['Fold now, win later.', 'Not the spot. Not yet.', 'I choose my battles.', 'Discretion, baby.'],
+    bomb:      ['Rolled the nuts! Let\'s go!', 'Quads, baby, QUADS!', 'That\'s a cooler.', 'Pay me.'],
+    trick_win: ['Read that a mile away.', 'Value town.', 'Pot odds said yes.', 'Extracting maximum.'],
+    hand_win:  ['Luck has nothing to do with it.', 'Worm would\'ve lost this.', 'In the money.', 'Study the game, win the game.'],
+    hand_lose: ['Bad beat. Pure bad beat.', 'I had outs…', 'Variance is cruel.', 'Reloading.'],
+  },
+  { // 1 — 美阿姨 (Shanghai passive-aggressive)
+    name: '美阿姨', slug: 'mei_ayi', lang: 'zh-CN', pitch: 1.2, rate: 0.85,
+    play:      ['侬看清楚哦~', 'Aiyah, too simple.', '阿拉打牌最厉害额!', 'Ha, easy-easy lah.'],
+    pass:      ['Pass? 我让让侬。', '不急不急，慢慢来。', '侬先来，我不急。', 'Aiyah, not worth it.'],
+    bomb:      ['炸！侬跑得掉伐！', 'BOMB! 阿拉不客气额!', '侬以为我没有？哼！', 'Shanghai style—BOOM!'],
+    trick_win: ['当然是我赢额！', 'Told you, told you!', '侬不行额，差远了。', 'Auntie Mei never loses.'],
+    hand_win:  ['阿拉赢啦！', 'Of course! Who else?', '小赤佬们输定了！', 'Easy like buying dumplings.'],
+    hand_lose: ['Aiyah！侬们作弊额！', '下一局阿拉赢回来！', '哼！运气而已！', 'Not fair, not fair!'],
+  },
+  { // 2 — The Godfather (Corleone gravitas)
+    name: 'Don', slug: 'don', lang: 'en-US', pitch: 0.7, rate: 0.55,
+    play:      ['I made them an offer.', 'In my family, we are patient.', 'Leave the cards. Take the win.', 'This is business.'],
+    pass:      ['I do not need every hand.', 'Even a Don knows restraint.', 'Strength is patience.', 'I am not in a hurry.'],
+    bomb:      ['An offer you can\'t refuse.', 'The five families send regards.', 'Sonny would\'ve done this sooner.', 'This is not personal.'],
+    trick_win: ['A friend… loses tricks to me.', 'Revenge, best served now.', 'Do not fear the Don.', 'I collect small victories.'],
+    hand_win:  ['The Don does not lose at cards.', 'Keep your winnings closer.', 'Leave the cards. Take the cannoli.', 'As expected.'],
+    hand_lose: ['A setback. Only a setback.', 'I will remember this.', 'You made a powerful enemy.', 'Every war has one battle like this.'],
+  },
+  { // 3 — 辣椒 (Sichuan hothead)
+    name: '辣椒', slug: 'la_jiao', lang: 'zh-CN', pitch: 1.1, rate: 0.95,
+    play:      ['麻了！辣了！出牌咯！', '四川人打牌，不服来战！', '老子今天赢定了！', 'SPICY play, haha!'],
+    pass:      ['过！不稀罕！', '让你一次，下次没得商量！', '巴适得很，先歇一歇。', '火还没烧到这儿。'],
+    bomb:      ['炸！炸翻天咯！', '妈呀！这把我赢定了！', '四川火锅式炸弹！', '啊哈！你咋整？！'],
+    trick_win: ['赢了赢了！巴适！', '老子的牌没人接得住！', '辣到你们了没？嘿嘿！', '这把稳了！'],
+    hand_win:  ['哦豁！今天老子赢！', '四川人不好惹哦！', '请吃串串！我请！', '巴适！巴适！巴适！'],
+    hand_lose: ['哎哟喂！咋赢不了嘛！', '下把一定赢！不服再来！', '说好的运气呢？！', '输了不慌！'],
+  },
+  { // 4 — The Kid (Cincinnati Kid underdog)
+    name: 'The Kid', slug: 'the_kid', lang: 'en-US', pitch: 1.15, rate: 0.85,
+    play:      ['I know what I\'m doing. Mostly.', 'This is the move. I think.', 'Trust the process!', 'Here goes nothing.'],
+    pass:      ['Fold… for now. Strategic.', 'I meant to do that.', 'Conserving ammo.', 'Patience. (Please work.)'],
+    bomb:      ['Oh SNAP! Is that a bomb?!', 'Did NOT see that coming. Wait—yes I did.', 'The Kid delivers!', 'BOOM goes the underdog!'],
+    trick_win: ['YES! That\'s what I\'m talking about!', 'See? I knew it!', 'The Kid takes the trick!', 'Never doubted myself. Never.'],
+    hand_win:  ['The Kid wins! Unbelievable!', 'Beginner\'s luck? Nope. Skill.', 'I\'ve been training for this!', 'Someone call the papers!'],
+    hand_lose: ['This is fine. Everything is fine.', 'I was testing you. You passed.', 'The Kid needs more practice.', 'I\'ll get you next hand…'],
+  },
+  { // 5 — 北京大爷 (Beijing hutong elder)
+    name: '北京大爷', slug: 'beijing_daye', lang: 'zh-CN', pitch: 0.85, rate: 0.65,
+    play:      ['哎，爷今儿高兴，出牌！', '您瞧好吧您！', '甭废话，接着！', '爷的牌，您接得住吗？'],
+    pass:      ['过！爷让着您！', '哼，爷不跟您计较。', '甭急，慢慢来。', '爷歇会儿。'],
+    bomb:      ['炸！服不服！', '爷来个大的！', '哈哈，北京爷们儿的炸弹！', '您就受着吧！'],
+    trick_win: ['这把爷赢了，服气不？', '甭不好意思，爷就是厉害。', '哎哟，太简单了。', '下一把继续！'],
+    hand_win:  ['爷今儿赢了，高兴！', '哈哈，这叫本事！', '北京大爷从不输！', '请您喝茶！'],
+    hand_lose: ['嗨，今儿运气差。', '哼，下把爷非赢不可！', '这牌没法打，认了。', '甭管，爷还玩儿！'],
+  },
+  { // 6 — 台湾阿嬤 (Taiwanese dramatic grandma)
+    name: '台灣阿嬤', slug: 'taiwan_ama', lang: 'zh-TW', pitch: 1.3, rate: 0.7,
+    play:      ['哎唷！阿嬤出牌囉！', '你們這些孩子，接好喔～', '阿嬤沒在客氣的啦！', '乖乖接牌！'],
+    pass:      ['先過！阿嬤看時機啦！', '哎唷，不急不急啦～', '阿嬤讓讓你們。', '這局阿嬤放水啦～'],
+    bomb:      ['哎唷！炸彈！嚇到了沒！', '阿嬤的秘密武器！', '這個你們接不住啦！', 'BOOM！台灣之光！'],
+    trick_win: ['哎唷，阿嬤贏了啦！', '你們這些孩子，差太多了！', '阿嬤就是厲害嘛！', '叫你們小看阿嬤！'],
+    hand_win:  ['阿嬤今天最棒啦！', '哈哈，請你們吃滷肉飯！', '阿嬤從不輸的！', '台灣阿嬤天下無敵！'],
+    hand_lose: ['哎唷，輸了啦…', '不要緊，下次阿嬤贏回來！', '這什麼牌啦，太難了！', '哼，運氣而已！'],
+  },
+  { // 7 — 天津卫 (Tianjin cross-talk comedian)
+    name: '天津卫', slug: 'tianjin_wei', lang: 'zh-CN', pitch: 1.1, rate: 0.85,
+    play:      ['嗬！您瞧好嘞！', '倍儿棒！出牌！', '这叫艺术，您懂吗？', '哎，逗你玩儿的，这才是真牌！'],
+    pass:      ['过！这叫以退为进！', '嗬，让着您呢，不稀罕。', '您先来，我歇会儿。', '倍儿有涵养，不跟您计较。'],
+    bomb:      ['嗬！炸弹！您受着吧！', '这叫相声里的包袱，炸！', '倍儿大的炸弹，服不服？', '哎哟嗬！这把我赢定了！'],
+    trick_win: ['嗬！这把是我的！', '倍儿溜！赢了！', '您说我厉害不厉害？', '这叫真功夫！'],
+    hand_win:  ['嗬！天津卫赢了！', '倍儿爽！今天状态好！', '这叫相声界的打牌水平！', '哎，您输得心服口服不？'],
+    hand_lose: ['嗬，今儿失手了。', '逗你玩儿呢，下把赢回来！', '倍儿不走运，认了。', '哎，输了不丢人，下次再来！'],
+  },
+  { // 8 — 东北大哥 (Dongbei buddy)
+    name: '东北大哥', slug: 'dongbei_dage', lang: 'zh-CN', pitch: 0.95, rate: 0.85,
+    play:      ['老铁，看我的！', '整！出牌！', '贼溜的一张，接着！', '嘎哈呢？接牌啊！'],
+    pass:      ['过！老铁让着你！', '整不了，算了。', '先歇着，等时机！', '哎，不跟你整这个。'],
+    bomb:      ['炸！老铁没毛病！', '整个大的！炸！', '贼爽！炸弹伺候！', '哎呀妈呀！炸弹！'],
+    trick_win: ['老铁，这把是我的！', '贼厉害吧？嘿嘿！', '整赢了！溜不溜？', '哎呀，太简单了整个！'],
+    hand_win:  ['老铁赢了！太溜了！', '今天状态贼好！', '整！东北人就是厉害！', '哎呀妈呀，赢了！'],
+    hand_lose: ['哎呀，整输了。', '老铁，下把赢回来！', '今天运气不行，整不了。', '没事，下把接着整！'],
+  },
+  { // 9 — James Bond (suave British spy)
+    name: 'Bond', slug: 'bond', lang: 'en-GB', pitch: 0.9, rate: 0.65,
+    play:      ['Bond. James Bond.', 'Shaken, not stirred.', 'I never lose… for long.', 'Calculated risk. Worth it.'],
+    pass:      ['Strategic withdrawal.', 'Patience is a weapon.', 'Even I must wait sometimes.', 'Reconnaissance complete.'],
+    bomb:      ['Licence to thrill.', 'M would be proud.', 'Q built this one especially.', 'Explosions. Always explosions.'],
+    trick_win: ['Predictable. Entirely predictable.', 'Never had a doubt.', 'The name\'s Bond. Winner Bond.', 'Another mission accomplished.'],
+    hand_win:  ['Britain wins. As usual.', 'For Queen and country.', 'Cheers. To me.', 'Nobody does it better.'],
+    hand_lose: ['Merely a tactical setback.', 'I\'ve survived worse.', 'Next hand. Watch me.', 'Never underestimate Bond.'],
+  },
+  { // 10 — Nervous Newbie
+    name: 'Newbie', slug: 'newbie', lang: 'en-US', pitch: 1.2, rate: 0.9,
+    play:      ['Um… is this right?', 'W-wait, that\'s my move!', 'Please work, please work…', 'I Googled the rules. Mostly.'],
+    pass:      ['Um… pass? Yeah. Pass.', 'I\'ll sit this one out.', 'Is passing allowed? It is? Great.', 'Definitely strategic.'],
+    bomb:      ['Oh! Oh! BOMB! I have a bomb!', 'This is fine, right? RIGHT?', 'I didn\'t know I had that!', 'My first bomb ever! Wooo!'],
+    trick_win: ['I won? I WON!', 'Oh my gosh, did that work?', 'Pure luck. Totally pure luck.', 'Haha! Take THAT!'],
+    hand_win:  ['WAIT—I actually won?!', 'Please screenshot this.', 'Mom\'s gonna be so proud!', 'Beginner\'s luck is REAL.'],
+    hand_lose: ['...I think I messed up.', 'Can we start over?', 'I\'m still learning, okay?!', 'That was a practice round.'],
+  },
+  { // 11 — El Tigre (Latin poker hustler)
+    name: 'El Tigre', slug: 'el_tigre', lang: 'en-US', pitch: 1.05, rate: 0.85,
+    play:      ['Ay, mi amigo! Watch the Tigre!', '¡Ándale! Vamos!', 'The tiger always pounces.', '¡Muy bien! My card!'],
+    pass:      ['El Tigre waits in the jungle.', 'No, no, not yet, amigo.', 'Patience, sí? Patience.', '¡Ay! I let you go this time.'],
+    bomb:      ['¡MADRE MÍA! BOMBA!', 'El Tigre has claws, sí!', '¡Fuego! FIRE BOMB!', 'Nobody stops El Tigre!'],
+    trick_win: ['¡Sí, sí, sí! Tigre wins!', '¡Ay caramba! Too easy!', 'The jungle belongs to me!', '¡Arriba! I take it all!'],
+    hand_win:  ['El Tigre NEVER loses, amigo!', '¡Fiesta! We celebrate tonight!', 'Gracias, gracias, everyone.', '¡Ay! Too beautiful!'],
+    hand_lose: ['¡Ay no! Impossible!', 'El Tigre will return, amigo.', 'This is just… muy unlucky.', '¡Rematch! I demand rematch!'],
+  },
+];
+
+let seatCharacters = [];
+
+// TODO: add in-game toggle to switch between Chinese-only and full pool
+const CHINESE_ONLY = true;
+const CHINESE_INDICES = AI_CHARACTER_POOL
+  .map((c, i) => ({ c, i }))
+  .filter(({ c }) => c.lang.startsWith('zh') || c.lang.startsWith('cmn'))
+  .map(({ i }) => i);
+
+function assignCharacters() {
+  const indices = [...(CHINESE_ONLY ? CHINESE_INDICES : AI_CHARACTER_POOL.map((_, i) => i))];
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  seatCharacters = indices.slice(0, 6);
+}
+
+let _ttsVoices = [];
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    _ttsVoices = window.speechSynthesis.getVoices();
+  };
+}
+
+// Pitch/rate modifiers per trigger type — adds emotional colour on top of character baseline
+const TRIGGER_MOD = {
+  bomb:      { pitch: +0.35, rate: +0.1  },
+  hand_win:  { pitch: +0.25, rate: +0.1  },
+  trick_win: { pitch: +0.15, rate: +0.05 },
+  play:      { pitch:  0,    rate:  0    },
+  pass:      { pitch: -0.1,  rate: -0.05 },
+  hand_lose: { pitch: -0.25, rate: -0.1  },
+};
+
+// Audio playback — pre-recorded MP3s with web speech fallback for missing files
+let _currentAudio = null;
+
+function _stopAudio() {
+  if (_currentAudio) { _currentAudio.pause(); _currentAudio = null; }
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function speakBubble(char, trigger, idx, interrupt = false) {
+  if (interrupt) _stopAudio();
+  if (char.slug) {
+    const audio = new Audio(`/audio/chars/${char.slug}_${trigger}_${idx}.mp3`);
+    _currentAudio = audio;
+    audio.onended = () => { if (_currentAudio === audio) _currentAudio = null; };
+    audio.play().catch(() => _speakWebSpeech(char, char[trigger][idx], trigger));
+    return;
+  }
+  _speakWebSpeech(char, char[trigger][idx], trigger);
+}
+
+function _speakWebSpeech(char, text, trigger) {
+  if (!window.speechSynthesis) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = char.lang;
+  const mod = TRIGGER_MOD[trigger] || { pitch: 0, rate: 0 };
+  utter.pitch = Math.max(0.1, Math.min(2, (char.pitch ?? 1) + mod.pitch));
+  utter.rate  = Math.max(0.1, Math.min(2, (char.rate  ?? 1) + mod.rate));
+  const lang5 = char.lang.slice(0, 5);
+  const lang2 = char.lang.slice(0, 2);
+  const match =
+    _ttsVoices.find(v => v.lang.startsWith(lang5) && /enhanced|premium|natural/i.test(v.name)) ||
+    _ttsVoices.find(v => v.lang === char.lang) ||
+    _ttsVoices.find(v => v.lang.startsWith(lang5)) ||
+    _ttsVoices.find(v => v.lang.startsWith(lang2));
+  if (match) utter.voice = match;
+  window.speechSynthesis.speak(utter);
+}
+
+const _bubbleTimers = {};
+
+function showAIBubble(seat, trigger, delay = 0, interrupt = false) {
+  if (seat === mySeat) return;
+  if (!roomSeats[seat] || roomSeats[seat].mode !== 'ai') return;
+  clearTimeout(_bubbleTimers[seat]);
+  _bubbleTimers[seat] = setTimeout(() => {
+    const seatEl = document.getElementById('gseat-' + seat);
+    if (!seatEl) return;
+    const char = AI_CHARACTER_POOL[seatCharacters[seat]];
+    if (!char) return;
+    const lines = char[trigger];
+    if (!lines?.length) return;
+    const idx  = Math.floor(Math.random() * lines.length);
+    const text = lines[idx];
+
+    seatEl.querySelector('.ai-bubble')?.remove();
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    seatEl.appendChild(bubble);
+
+    speakBubble(char, trigger, idx, interrupt);
+
+    setTimeout(() => seatEl.querySelector('.ai-bubble')?.remove(), 3500);
+  }, delay);
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────

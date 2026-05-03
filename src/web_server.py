@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel
 from serializers import ser_event, ser_event_pov
@@ -36,6 +37,8 @@ WEB_DIR  = os.path.join(os.path.dirname(__file__), "..", "web")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 rooms = RoomManager()
+
+app.mount("/audio", StaticFiles(directory=os.path.join(WEB_DIR, "audio")), name="audio")
 
 
 # ── Static pages ──────────────────────────────────────────────────────────────
