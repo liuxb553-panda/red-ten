@@ -241,6 +241,24 @@ vs-Search average ~56% — consistently beating SearchPlayer. The new training a
 
 ---
 
+## Debugging live games
+
+The multiplayer UI has a **🚩 Flag** button (top-left, visible during a game). Click it whenever something looks wrong — it inserts a timestamped marker into the game log and copies a reference to your clipboard:
+
+```
+room NKKK, flag 0a59be0b, check debug_logs/NKKK.jsonl
+```
+
+To inspect that flag — as a human or as an AI coding assistant:
+
+```bash
+python3 src/debug_inspect.py NKKK 0a59be0b
+```
+
+Output shows the legal moves offered at that moment, the human player's full hand, the current trick state, and the 5 preceding events for context. The game log (`debug_logs/<ROOM>.jsonl`) is written continuously during play; crash dumps appear as `debug_logs/crash_<ROOM>.json`. See `docs/debug_snapshot_tool.md` for full details.
+
+---
+
 ## Troubleshooting
 
 **"No module named torch"** — activate your virtual environment first.

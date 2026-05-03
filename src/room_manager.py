@@ -16,11 +16,16 @@ RoomManager     — creates and looks up rooms by code.
 """
 from __future__ import annotations
 import asyncio
+import datetime
+import json
+import os
 import queue
 import random
 import string
+import sys as _sys
 import threading
 import time
+import traceback as _tb
 from typing import Optional, TYPE_CHECKING
 
 from hand import Player
@@ -31,6 +36,8 @@ from serializers import ser_event, ser_event_pov, ser_move, ser_card
 
 if TYPE_CHECKING:
     from fastapi import WebSocket
+
+LOGS_DIR = os.path.join(os.path.dirname(__file__), "..", "debug_logs")
 
 
 class SeatController(Player):
@@ -47,6 +54,7 @@ class SeatController(Player):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._move_queue: queue.Queue[Optional[int]] = queue.Queue()
         self._lock = threading.Lock()
+        self._room: Optional["GameRoom"] = None
 
     # ── connection management ─────────────────────────────────────────────────
 
@@ -85,6 +93,12 @@ class SeatController(Player):
             time.sleep(random.uniform(1.0, 3.0))
             return self.ai_player.choose_action(state, legal_moves)
 
+        # Log the legal-moves set for debugging before asking the human.
+        if self._room and self._room._renderer:
+            self._room._renderer.log_debug_turn(
+                self.id, [{**ser_move(m), "idx": i} for i, m in enumerate(legal_moves)]
+            )
+
         # Send legal moves to the human client.
         self.send({
             "type": "your_turn",
@@ -117,15 +131,38 @@ class LiveRenderer(GUIRenderer):
     """
     Extends GUIRenderer to broadcast every event to all connected clients
     as it happens, while still building the full event list for replay.
+    Also appends every event to a JSONL log file for post-hoc debugging.
     """
 
     def __init__(self, room: "GameRoom"):
         super().__init__()
         self._room = room
+        self._log_path = room._log_path
 
     def _emit(self, kind: str, desc: str, **kwargs) -> None:
         super()._emit(kind, desc, **kwargs)
         self._room.broadcast_event(self.events[-1])
+        try:
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(ser_event(self.events[-1]), ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def log_debug_turn(self, player: int, serialized_moves: list) -> None:
+        """Append a your_turn record to the JSONL log without broadcasting it."""
+        record = {
+            "kind":        "your_turn",
+            "desc":        f"P{player}'s turn — {len(serialized_moves)} legal moves",
+            "player":      player,
+            "timestamp":   datetime.datetime.now().isoformat(timespec="seconds"),
+            "legal_moves": serialized_moves,
+        }
+        try:
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
 
 
 class GameRoom:
@@ -143,9 +180,15 @@ class GameRoom:
         self._game_thread: Optional[threading.Thread] = None
         self._continue_event = threading.Event()
 
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        self._log_path   = os.path.join(LOGS_DIR, f"{room_code}.jsonl")
+        self._flags_path = os.path.join(LOGS_DIR, f"{room_code}_flags.json")
+
         from session import make_players
         for i, ai in enumerate(make_players(ai_tier, n_samples=n_samples)):
-            self.seats.append(SeatController(i, ai))
+            seat = SeatController(i, ai)
+            seat._room = self
+            self.seats.append(seat)
 
     # ── broadcasting ──────────────────────────────────────────────────────────
 
@@ -177,6 +220,33 @@ class GameRoom:
 
     # ── game lifecycle ────────────────────────────────────────────────────────
 
+    def add_flag(self, note: str | None = None) -> dict:
+        """Write a flag record into the JSONL log and the flags index."""
+        import secrets
+        flag_id = secrets.token_hex(4)
+        ts = datetime.datetime.now().isoformat(timespec="seconds")
+        record = {"kind": "flag", "id": flag_id, "timestamp": ts, "note": note}
+        if self._renderer:
+            try:
+                with open(self._renderer._log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+        try:
+            flags = json.loads(open(self._flags_path, encoding="utf-8").read()) \
+                if os.path.exists(self._flags_path) else []
+        except (OSError, json.JSONDecodeError):
+            flags = []
+        flags.append(record)
+        with open(self._flags_path, "w", encoding="utf-8") as f:
+            json.dump(flags, f, ensure_ascii=False, indent=2)
+        return {
+            "log_file":   os.path.basename(self._renderer._log_path if self._renderer else self._log_path),
+            "flags_file": os.path.basename(self._flags_path),
+            "flag_id":    flag_id,
+            "flag_count": len(flags),
+        }
+
     def signal_continue(self) -> None:
         """Signal the game thread to continue to the next hand."""
         self._continue_event.set()
@@ -201,6 +271,24 @@ class GameRoom:
         try:
             GameSession(self.seats, self._renderer,
                         continue_cb=self._wait_for_continue).run(num_hands=num_hands)
+        except Exception:
+            exc = _sys.exc_info()
+            try:
+                crash = {
+                    "room_code":   self.room_code,
+                    "log_file":    os.path.basename(self._log_path),
+                    "timestamp":   datetime.datetime.now().isoformat(timespec="seconds"),
+                    "event_count": len(self._renderer.events) if self._renderer else 0,
+                    "exc_type":    exc[0].__name__,
+                    "exc_message": str(exc[1]),
+                    "traceback":   "".join(_tb.format_exception(*exc)),
+                }
+                crash_path = os.path.join(LOGS_DIR, f"crash_{self.room_code}.json")
+                with open(crash_path, "w", encoding="utf-8") as f:
+                    json.dump(crash, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+            raise
         finally:
             self.status = "done"
             replay = [ser_event(e) for e in self._renderer.events]

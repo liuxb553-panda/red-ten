@@ -140,12 +140,19 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 
 /* ── Trick zone ──────────────────────────────────────────────────────────── */
 #gtrick-zone { position: absolute; transform: translate(-50%, -50%);
-  pointer-events: none; display: flex; flex-direction: column;
-  align-items: center; gap: 4px; z-index: 15; }
-#gtrick-cards { display: flex; }
-#gtrick-cards .card { margin-left: -18px; }
-#gtrick-cards .card:first-child { margin-left: 0; }
-#gtrick-name { font-size: 12px; color: #ffe42d; font-weight: bold; }
+  pointer-events: none; display: flex; flex-direction: row; flex-wrap: wrap;
+  align-items: flex-end; justify-content: center; gap: 10px; z-index: 15;
+  max-width: 68vw; }
+.trick-play { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.trick-play-label { font-size: 10px; color: #829672; background: #122a18;
+  border: 1px solid #2a4a34; border-radius: 3px; padding: 1px 6px;
+  white-space: nowrap; }
+.trick-play.best > .trick-play-label { color: #ffe42d; border-color: #ffe42d; }
+.trick-play.pass > .trick-play-label { font-style: italic; border-color: transparent;
+  background: transparent; }
+.trick-play-cards { display: flex; }
+.trick-play-cards .card { margin-left: -18px; }
+.trick-play-cards .card:first-child { margin-left: 0; }
 
 .flying-card { position: absolute; z-index: 50; pointer-events: none;
   transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
@@ -183,11 +190,24 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
   padding: 3px 8px; border-radius: 4px; background: #162c1c; z-index: 200; }
 #conn-badge.ok  { color: #4bc84b; border: 1px solid #4bc84b; }
 #conn-badge.off { color: #e06060; border: 1px solid #e06060; }
+
+/* ── Debug flag button (dev tool) ────────────────────────────────────────── */
+#debug-btn { position: fixed; top: 8px; left: 12px; font-size: 10px;
+  padding: 3px 8px; border-radius: 4px; background: #162c1c;
+  border: 1px solid #3a6a44; color: #829672; cursor: pointer;
+  z-index: 200; display: none; }
+#debug-btn:hover { border-color: #829672; color: #e1e4d7; }
+#debug-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #0c2c14; border: 1px solid #3a6a44; border-radius: 6px;
+  color: #e1e4d7; font-size: 11px; font-family: monospace; white-space: pre-line;
+  padding: 8px 14px; z-index: 300; display: none; max-width: 80vw; text-align: center; }
 </style>
 </head>
 <body>
 
 <div id="conn-badge" class="off">⬤ disconnected</div>
+<button id="debug-btn" onclick="flagDebugMoment()">🚩 Flag</button>
+<div id="debug-toast"></div>
 
 <!-- ── Lobby ─────────────────────────────────────────────────────────────── -->
 <div id="lobby-screen" class="screen active">
@@ -292,6 +312,46 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let ws = null;
+// CCW turn order from seat 0: 0→5→4→3→2→1, so label them P1–P6 in that order
+const CCW_NUM   = [1, 6, 5, 4, 3, 2];
+const CCW_ORDER = [0, 5, 4, 3, 2, 1];  // seats in P1→P6 display order
+const pLabel = p => 'P' + CCW_NUM[p];
+
+// ── Sound engine (Web Audio API) ──────────────────────────────────────────────
+const Sound = (() => {
+  let ctx = null;
+  const ac = () => {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  };
+  const tone = (freq, type, dur, vol = 0.25, t0 = 0) => {
+    const c = ac(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.type = type; o.frequency.value = freq;
+    const start = c.currentTime + t0;
+    g.gain.setValueAtTime(vol, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    o.start(start); o.stop(start + dur + 0.02);
+  };
+  const noise = (dur, vol = 0.12) => {
+    const c = ac(), sr = c.sampleRate;
+    const buf = c.createBuffer(1, sr * dur, sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
+    const src = c.createBufferSource(), g = c.createGain();
+    src.buffer = buf; g.gain.value = vol;
+    src.connect(g); g.connect(c.destination); src.start();
+  };
+  return {
+    card()    { noise(0.04); },
+    bomb()    { tone(55,'sine',0.6,0.5); tone(110,'sine',0.4,0.2,0.04); },
+    yourTurn(){ tone(520,'sine',0.12,0.2); tone(660,'sine',0.12,0.2,0.13); },
+    trickEnd(){ tone(880,'sine',0.18,0.15); },
+    handEnd() { tone(440,'sine',0.15,0.2); tone(554,'sine',0.15,0.2,0.16); tone(659,'sine',0.25,0.2,0.32); },
+  };
+})();
+
 let myRoom = null;
 let mySeat = -1;
 let roomSeats = [];        // [{seat, mode, you}]
@@ -308,6 +368,8 @@ let evLog = [];            // recent event descriptions
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  document.getElementById('debug-btn').style.display =
+    (id === 'game-screen' && myRoom) ? 'block' : 'none';
 }
 
 // ── Lobby ─────────────────────────────────────────────────────────────────────
@@ -402,7 +464,7 @@ function populatePreGameSeats() {
     const info = roomSeats[p] || {seat: p, mode: 'ai'};
     const isHuman = info.mode === 'human';
     const isMe = p === mySeat;
-    document.getElementById('gsname-' + p).textContent = 'P' + p + (isMe ? ' (You)' : '');
+    document.getElementById('gsname-' + p).textContent = pLabel(p) + (isMe ? ' (You)' : '');
     document.getElementById('gsbadge-' + p).textContent = isHuman ? '👤' : '🤖';
     document.getElementById('gsc-hand-' + p).textContent = 'hand 0';
     document.getElementById('gsc-cum-' + p).textContent = 'total 0';
@@ -416,12 +478,12 @@ function showPreGameOverlay() {
   document.getElementById('pgo-mo-gong').textContent = '';
 
   let html = '';
-  for (let p = 0; p < 6; p++) {
+  for (const p of CCW_ORDER) {
     const info = roomSeats[p] || {seat: p, mode: 'ai'};
     const isHuman = info.mode === 'human';
     const isMe = p === mySeat;
     const icon = isHuman ? '👤' : '🤖';
-    const name = 'P' + p + (isMe ? ' (You)' : '');
+    const name = pLabel(p) + (isMe ? ' (You)' : '');
     html += '<div style="margin:2px 0;">' + icon + ' ' + name + ' — Score: 0</div>';
   }
   document.getElementById('pgo-players').innerHTML = html;
@@ -526,7 +588,7 @@ function handleMsg(msg) {
       gameEvents.push(msg.event);
       gameSnap = msg.event.snap;
       if (msg.event.player != null) lastActor = msg.event.player;
-      evLog.push(msg.event.desc);
+      evLog.push(msg.event.desc.replace(/\bP([0-5])\b/g, (_, n) => pLabel(+n)));
       if (evLog.length > 60) evLog.shift();
 
       // Trigger card fly / pass animations
@@ -536,11 +598,14 @@ function handleMsg(msg) {
           showPassBadge(ev.player);
         } else if (ev.move.cards && ev.move.cards.length) {
           animateCardPlay(ev.player, ev.move.cards);
+          if (ev.move.bomb) Sound.bomb(); else Sound.card();
         }
       }
+      if (ev.kind === 'trick_end') Sound.trickEnd();
 
       renderGame();
       if (msg.event.kind === 'hand_end' && msg.event.result) {
+        Sound.handEnd();
         pendingResult = msg.event.result;
         pendingSnap = msg.event.snap;
         showMoGongDisplay(msg.event.result);
@@ -548,6 +613,7 @@ function handleMsg(msg) {
       break;
 
     case 'your_turn':
+      Sound.yourTurn();
       myTurnMoves = msg.legal_moves;
       showMovePicker(msg.legal_moves);
       break;
@@ -614,9 +680,7 @@ function positionGSeats() {
 }
 
 function buildGTrickZone() {
-  document.getElementById('gtrick-zone').innerHTML = `
-    <div id="gtrick-cards"></div>
-    <div id="gtrick-name"></div>`;
+  document.getElementById('gtrick-zone').innerHTML = '';
 }
 
 function positionGTrickZone() {
@@ -692,7 +756,7 @@ function renderGame() {
     const nameEl = document.getElementById('gsname-' + p);
     const badgeEl = document.getElementById('gsbadge-' + p);
     const team = realTeams[p];
-    let name = p === mySeat ? `P${p} (You)` : `P${p}`;
+    let name = p === mySeat ? `${pLabel(p)} (You)` : pLabel(p);
     if (snap.fin[p]) {
       const pos = snap.fo.indexOf(p);
       name += pos === 0 ? ' 大贡' : ` #${pos+1}`;
@@ -745,32 +809,49 @@ function renderGame() {
     document.getElementById('gcnt-' + p).textContent = trueCount + ' cards';
   }
 
-  // Trick zone — show only the last non-pass play (current best)
-  const lastPlay = [...snap.tp].reverse().find(([p, m]) => m && !m.pass);
-  const tzCards = document.getElementById('gtrick-cards');
-  const tzName = document.getElementById('gtrick-name');
-  if (lastPlay) {
-    const [p, move] = lastPlay;
-    tzCards.innerHTML = move.cards.map(c => cardHtml(c, {})).join('');
-    if (p === snap.tw) {
-      tzCards.querySelectorAll('.card').forEach(c => c.style.outline = '2px solid #ffaf00');
+  // Trick zone — show all plays in the current trick
+  const tzEl = document.getElementById('gtrick-zone');
+  tzEl.innerHTML = '';
+  const bestPlay = [...snap.tp].reverse().find(([, m]) => m && !m.pass);
+  const playedMap = new Map(snap.tp.map(([p, m]) => [p, m]));
+  const displayOrder = snap.tp.map(([p]) => p);
+  let gtrickCardsAssigned = false;
+  for (const p of displayOrder) {
+    const move = playedMap.get(p);
+    const isPass = !move || move.pass;
+    const isBest = bestPlay && p === bestPlay[0];
+    const playDiv = document.createElement('div');
+    playDiv.className = 'trick-play' + (isBest ? ' best' : '') + (isPass ? ' pass' : '');
+    const label = document.createElement('div');
+    label.className = 'trick-play-label';
+    label.textContent = pLabel(p) + (isPass ? ' pass' : '');
+    playDiv.appendChild(label);
+    if (!isPass) {
+      const cardsDiv = document.createElement('div');
+      cardsDiv.className = 'trick-play-cards';
+      if (isBest && !gtrickCardsAssigned) {
+        cardsDiv.id = 'gtrick-cards';
+        gtrickCardsAssigned = true;
+      }
+      cardsDiv.innerHTML = move.cards.map(c => cardHtml(c, {})).join('');
+      if (p === snap.tw) {
+        cardsDiv.querySelectorAll('.card').forEach(c => c.style.outline = '2px solid #ffaf00');
+      }
+      playDiv.appendChild(cardsDiv);
     }
-    tzName.textContent = 'P' + p;
-  } else {
-    tzCards.innerHTML = '';
-    tzName.textContent = '';
+    tzEl.appendChild(playDiv);
   }
 
   // Score panel
   const scoreEl = document.getElementById('g-score-table');
   let sh = '<div class="row" style="color:#829672;font-size:10px"><span class="pname">Player</span><span class="pts">Hand</span><span class="pts">Total</span></div>';
-  for (let p = 0; p < 6; p++) {
+  for (const p of CCW_ORDER) {
     const ident = snap.ids[p];
     const col = ident === 'Red' ? '#dc4848' : ident === 'Non-Red' ? '#589bdc' : '#e1e4d7';
     const fin = snap.fin[p] ? ' ✓' : '';
     const you = p === mySeat ? ' (You)' : '';
     sh += `<div class="row" style="color:${col}">
-      <span class="pname">P${p}${fin}${you}</span>
+      <span class="pname">${pLabel(p)}${fin}${you}</span>
       <span class="pts">${snap.ts[p]}</span>
       <span class="pts">${snap.cs[p]}</span>
     </div>`;
@@ -930,7 +1011,7 @@ function showMoGongDisplay(result) {
     });
 
     const scoringCount = sorted.filter(c => c.sv > 0).length;
-    html += '<div class="mg-player-name">P' + p + ' (' + sorted.length + ' cards';
+    html += '<div class="mg-player-name">' + pLabel(p) + ' (' + sorted.length + ' cards';
     if (scoringCount > 0) html += ', <span style="color:#ffdc3c">' + scoringCount + ' scoring</span>';
     html += ')</div>';
     html += '<div class="mg-cards">' + sorted.map(c => cardHtml(c, {})).join('') + '</div>';
@@ -982,13 +1063,13 @@ function showHandEndOverlay(result, snap) {
   const mg = result.mo_gong || [];
 
   let html = '';
-  for (let p = 0; p < 6; p++) {
+  for (const p of CCW_ORDER) {
     const info = roomSeats[p] || {seat: p, mode: 'ai'};
     const isHuman = info.mode === 'human';
     const isMe = p === mySeat;
     const isRed = result.red && result.red.includes(p);
     const icon = isHuman ? '👤' : '🤖';
-    const name = 'P' + p + (isMe ? ' (You)' : '');
+    const name = pLabel(p) + (isMe ? ' (You)' : '');
     const col = isRed ? '#dc4848' : '#589bdc';
 
     let tag = '';
@@ -1000,10 +1081,10 @@ function showHandEndOverlay(result, snap) {
   document.getElementById('pgo-players').innerHTML = html;
 
   document.getElementById('pgo-da-gong').textContent =
-    dg !== null && dg !== undefined ? '大贡: P' + dg : '';
+    dg !== null && dg !== undefined ? '大贡: ' + pLabel(dg) : '';
 
   if (mg && mg.length) {
-    document.getElementById('pgo-mo-gong').textContent = '末贡: ' + mg.map(p => 'P' + p).join(', ');
+    document.getElementById('pgo-mo-gong').textContent = '末贡: ' + mg.map(p => pLabel(p)).join(', ');
   } else {
     document.getElementById('pgo-mo-gong').textContent = '';
   }
@@ -1033,6 +1114,27 @@ function sendMove(idx) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({type: 'move', move_idx: idx}));
   hideMovePicker();
+}
+
+// ── Debug flag (dev tool) ─────────────────────────────────────────────────────
+async function flagDebugMoment() {
+  const btn = document.getElementById('debug-btn');
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const r = await fetch(`/api/debug-flag/${myRoom}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    const msg = `room ${myRoom}, flag ${d.flag_id}, check debug_logs/${d.log_file}`;
+    try { await navigator.clipboard.writeText(msg); } catch(_) {}
+    showDebugToast(`Flag ${d.flag_id} inserted — copied to clipboard`);
+  } catch(e) { showDebugToast('Flag failed: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🚩 Flag'; }
+}
+function showDebugToast(msg) {
+  const t = document.getElementById('debug-toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.style.display = 'none'; }, 6000);
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────

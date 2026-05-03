@@ -13,6 +13,7 @@ Routes:
     GET  /api/training          → parse training log, return structured JSON
     POST /api/room/create       → create multiplayer room
     POST /api/room/join/{code}  → join room, claim a seat
+    POST /api/debug-flag/{code} → append a debug flag marker to debug_logs/
     WS   /ws/{room}/{seat}      → live game WebSocket
 """
 from __future__ import annotations
@@ -128,6 +129,14 @@ def join_room(code: str, req: JoinRoomReq):
             "status": room.status,
             "seats": [{"seat": i, "mode": "human" if s.is_human else "ai"}
                       for i, s in enumerate(room.seats)]}
+
+
+@app.post("/api/debug-flag/{code}")
+def debug_flag(code: str, note: str = Query(default=None)):
+    room = rooms.get(code)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room.add_flag(note=note)
 
 
 # ── Multiplayer WebSocket ──────────────────────────────────────────────────────
