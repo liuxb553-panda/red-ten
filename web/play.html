@@ -364,15 +364,25 @@ const CCW_NUM   = [1, 6, 5, 4, 3, 2];
 const CCW_ORDER = [0, 5, 4, 3, 2, 1];  // seats in P1→P6 display order
 const pLabel = p => 'P' + CCW_NUM[p];
 
-// ── Sound engine ──────────────────────────────────────────────────────────────
-const Sound = window._sound;
+// ── Sound engine (lazy — module script is deferred) ───────────────────────────
+const Sound = {
+  card()     { window._sound?.card(); },
+  bomb()     { window._sound?.bomb(); },
+  yourTurn() { window._sound?.yourTurn(); },
+  trickEnd() { window._sound?.trickEnd(); },
+  handEnd()  { window._sound?.handEnd(); },
+};
 
 // ── Mute button ────────────────────────────────────────────────────────────────
 const muteBtn = document.getElementById('mute-btn');
-muteBtn.textContent = window._sound.muted ? '🔇' : '🔊';
+window.addEventListener('DOMContentLoaded', () => {
+  if (muteBtn && window._sound) {
+    muteBtn.textContent = window._sound.muted ? '🔇' : '🔊';
+  }
+});
 muteBtn.addEventListener('click', () => {
-  const muted = window._sound.toggle();
-  window._speech._muted = muted;
+  const muted = window._sound?.toggle();
+  if (window._speech) window._speech._muted = muted;
   muteBtn.textContent = muted ? '🔇' : '🔊';
 });
 
@@ -671,7 +681,7 @@ function handleMsg(msg) {
       if (ev.player != null) {
         if ((ev.kind === 'lead' || ev.kind === 'action') && ev.move?.pass) {
           const gender = (ev.player % 2 === 1) ? 'female' : 'male';
-          window._speech.sayPass(gender);
+          window._speech?.sayPass(gender);
         }
       }
 
