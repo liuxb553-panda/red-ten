@@ -1,8 +1,3 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; background: #0c1a10;
-  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", "Microsoft YaHei", Arial, sans-serif;
-  color: #e1e4d7; }
-
 /* ── Splash screen ──────────────────────────────────────────────────────── */
 #splash {
   height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -17,10 +12,7 @@ html, body { height: 100%; overflow: hidden; background: #0c1a10;
   opacity: 0; transform: scale(0.3);
 }
 
-@keyframes splashIn {
-  0%   { opacity: 0; transform: scale(0.3) rotate(-8deg); }
-  100% { opacity: 1; transform: scale(1)   rotate(0deg);   }
-}
+/* @keyframes splashIn → animations.css */
 
 .splash-sub {
   font-size: 18px; color: #829672; margin-top: 16px;
@@ -28,10 +20,7 @@ html, body { height: 100%; overflow: hidden; background: #0c1a10;
   opacity: 0; transform: translateY(12px);
 }
 
-@keyframes fadeUp {
-  0%   { opacity: 0; transform: translateY(12px); }
-  100% { opacity: 1; transform: translateY(0);    }
-}
+/* @keyframes fadeUp → animations.css */
 
 .splash-hint {
   position: absolute; bottom: 44px; font-size: 13px; color: #4a6a4a;

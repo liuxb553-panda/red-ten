@@ -1,1 +1,11 @@
-/* All @keyframes — will be populated later */
+/* All @keyframes — will be populated in subsequent tasks */
+
+@keyframes splashIn {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-8deg); }
+  100% { opacity: 1; transform: scale(1)   rotate(0deg);   }
+}
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0);    }
+}
