@@ -158,7 +158,6 @@ html, body { height: 100%; overflow: hidden; background: #165a23;
 .trick-play-cards { display: flex; }
 .trick-play-cards .card { margin-left: -18px; }
 .trick-play-cards .card:first-child { margin-left: 0; }
-#gtrick-score-accum { font-size: 11px; color: #ffdc3c; }
 
 .flying-card { position: absolute; z-index: 50; pointer-events: none;
   transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
@@ -284,7 +283,6 @@ body.shake { animation: screenShake 0.55s cubic-bezier(0.36,0.07,0.19,0.97) both
       </select>
     </div>
     <button class="lbtn" onclick="createGame()">＋ Create New Game</button>
-    <button class="lbtn" style="border-color:#589bdc;color:#589bdc" onclick="showBattleConfig()">🤖 AI vs AI Battle</button>
     <div style="text-align:center;font-size:11px;color:#829672;margin:10px 0 6px">— or join an existing game —</div>
     <div id="room-list" style="min-height:36px;margin-bottom:8px;"></div>
     <div id="join-row" style="display:flex;gap:8px;margin-bottom:4px;">
@@ -313,38 +311,6 @@ body.shake { animation: screenShake 0.55s cubic-bezier(0.36,0.07,0.19,0.97) both
     <div id="seat-grid"></div>
     <button id="start-btn" onclick="startGame()">▶ Start Game</button>
     <div id="room-status-msg">Waiting for players…</div>
-  </div>
-</div>
-
-<!-- ── Battle config ──────────────────────────────────────────────────────── -->
-<div id="battle-config-screen" class="screen">
-  <div id="battle-config-box" style="background:#0c2c14;border:2px solid #589bdc;border-radius:12px;
-    padding:28px 36px;min-width:420px;max-width:520px;width:90vw;max-height:90vh;overflow-y:auto;">
-    <h2 style="font-size:16px;color:#589bdc;text-align:center;margin-bottom:6px;">🤖 AI vs AI Battle</h2>
-    <div style="font-size:11px;color:#829672;text-align:center;margin-bottom:16px;">
-      Configure 6 AI seats — watch them battle it out!</div>
-    <div id="battle-seat-rows" style="margin-bottom:14px;"></div>
-    <div class="lfield">
-      <label>Speed</label>
-      <select id="battle-speed">
-        <option value="normal" selected>Normal — think 1–3s</option>
-        <option value="fast">Fast — think 0.3–0.5s</option>
-        <option value="instant">Instant — no delay</option>
-      </select>
-    </div>
-    <div class="lfield">
-      <label>Number of hands</label>
-      <select id="battle-hands">
-        <option value="3" selected>3 hands</option>
-        <option value="6">6 hands</option>
-        <option value="12">12 hands</option>
-        <option value="20">20 hands</option>
-      </select>
-    </div>
-    <button class="lbtn" style="border-color:#589bdc;color:#589bdc" onclick="startBattle()">
-      ▶ Start Battle
-    </button>
-    <button class="lbtn secondary" onclick="showScreen('lobby-screen')">← Back to Lobby</button>
   </div>
 </div>
 
@@ -456,9 +422,6 @@ let gameEvents = [];       // full event list (grows during game)
 let gameSnap = null;       // latest snapshot
 let myTurnMoves = null;    // legal_moves from your_turn msg, or null
 let lastActor   = null;    // player index who last acted
-let isSpectator = false;  // true when watching AI vs AI battle
-let battleSpeed = 'normal';
-let battleHands = 6;
 let showingHandEnd = false; // true when hand_end overlay is visible
 let pendingResult = null;   // hand_end result waiting for mo_gong review
 let pendingSnap   = null;   // snapshot from the hand_end event
@@ -491,23 +454,13 @@ async function refreshRoomList() {
     }
     const tierName = { rule: 'Rule AI', search: 'Search AI', ml: 'ML AI' };
     el.innerHTML = list.map(room => {
-      let info, btn;
-      if (room.is_battle) {
-        const speed = room.speed || 'normal';
-        info = `${room.status === 'running' ? 'In game' : 'Waiting'} · AI Battle · ${speed}`;
-        btn = `<button class="room-join-btn" style="border-color:#589bdc;color:#589bdc"
-          onclick="spectateRoom('${room.code}')">Watch ▶</button>`;
-      } else {
-        const players = room.human_seats ? `${room.human_seats}/6 human` : 'AI only';
-        const status  = room.status === 'running' ? 'In game' : 'Waiting';
-        const tier    = tierName[room.ai_tier] || room.ai_tier;
-        info = `${status} · ${players} · ${tier}`;
-        btn = `<button class="room-join-btn" onclick="quickJoin('${room.code}')">Join →</button>`;
-      }
+      const players = room.human_seats ? `${room.human_seats}/6 human` : 'AI only';
+      const status  = room.status === 'running' ? 'In game' : 'Waiting';
+      const tier    = tierName[room.ai_tier] || room.ai_tier;
       return `<div class="room-row">
         <span class="room-code-tag">${room.code}</span>
-        <span class="room-info">${info}</span>
-        ${btn}
+        <span class="room-info">${status} · ${players} · ${tier}</span>
+        <button class="room-join-btn" onclick="quickJoin('${room.code}')">Join →</button>
       </div>`;
     }).join('');
   } catch(_) {}
@@ -517,23 +470,6 @@ async function quickJoin(code) {
   document.getElementById('lobby-err').textContent = '';
   try { await enterRoom(code, -1); }
   catch(e) { document.getElementById('lobby-err').textContent = 'Error: ' + e.message; }
-}
-
-async function spectateRoom(code) {
-  document.getElementById('lobby-err').textContent = '';
-  // Close any existing player WebSocket
-  if (ws) { ws.close(); ws = null; }
-  isSpectator = true;
-  myRoom = code;
-  mySeat = -1;
-  roomSeats = [];
-  gameEvents = [];
-  evLog = [];
-  gameSnap = null;
-  initGameScreen();
-  showScreen('game-screen');
-  requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); });
-  connectSpectatorWS();
 }
 
 // ── Lobby ─────────────────────────────────────────────────────────────────────
@@ -559,130 +495,6 @@ async function joinGame() {
   try {
     await enterRoom(code, -1);
   } catch(e) { err.textContent = 'Error: ' + e.message; }
-}
-
-// ── Battle config ───────────────────────────────────────────────────────────────
-let _tierList = [];
-let _personalityList = [];
-
-async function showBattleConfig() {
-  document.getElementById('lobby-err').textContent = '';
-  showScreen('battle-config-screen');
-
-  // Fetch available tiers/personalities if not cached
-  if (!_tierList.length) {
-    try {
-      const r = await fetch('/api/tiers');
-      const d = await r.json();
-      _tierList = d.tiers || [];
-      _personalityList = d.personalities || [];
-    } catch(e) {
-      document.getElementById('lobby-err').textContent = 'Failed to load AI tiers';
-      return;
-    }
-  }
-  renderBattleSeatRows();
-}
-
-function renderBattleSeatRows() {
-  const container = document.getElementById('battle-seat-rows');
-  const tierOpts = _tierList.map(t =>
-    `<option value="${t.value}">${t.label}</option>`
-  ).join('');
-
-  let html = '';
-  for (let p = 0; p < 6; p++) {
-    html += `<div class="lfield" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
-      <span style="min-width:28px;font-size:12px;color:#e1e4d7;">P${p+1}</span>
-      <select id="bseat-tier-${p}" style="flex:1"
-        onchange="onBattleTierChange(${p})">${tierOpts}</select>
-      <select id="bseat-pers-${p}" style="flex:1;display:none">
-        ${_personalityList.map(pers =>
-          `<option value="${pers.value}">${pers.label}</option>`
-        ).join('')}
-      </select>
-    </div>`;
-  }
-  container.innerHTML = html;
-
-  // Set default selections: alternating multi-agent and search
-  for (let p = 0; p < 6; p++) {
-    const tierSel = document.getElementById('bseat-tier-' + p);
-    const persSel = document.getElementById('bseat-pers-' + p);
-    // Alternate: P0,P2,P4 = multi-agent with different personalities, P1,P3,P5 = search
-    if (p % 2 === 0) {
-      tierSel.value = 'multi-agent';
-      const persNames = ['aggressive','conservative','balanced','tricky','cooperative','selfish'];
-      persSel.value = persNames[Math.floor(p / 2) * 2]; // aggressive, balanced, cooperative
-    } else {
-      tierSel.value = 'search';
-    }
-    onBattleTierChange(p);
-  }
-}
-
-function onBattleTierChange(p) {
-  const tierSel = document.getElementById('bseat-tier-' + p);
-  const persSel = document.getElementById('bseat-pers-' + p);
-  const tier = _tierList.find(t => t.value === tierSel.value);
-  persSel.style.display = (tier && tier.has_personality) ? '' : 'none';
-}
-
-async function startBattle() {
-  const err = document.getElementById('lobby-err');
-  err.textContent = '';
-
-  const seats = [];
-  for (let p = 0; p < 6; p++) {
-    const tier = document.getElementById('bseat-tier-' + p).value;
-    const pers = document.getElementById('bseat-pers-' + p).value;
-    seats.push({tier, personality: pers});
-  }
-  battleSpeed = document.getElementById('battle-speed').value;
-  battleHands = parseInt(document.getElementById('battle-hands').value);
-
-  try {
-    const r = await fetch('/api/battle/create', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({seats, speed: battleSpeed, num_hands: battleHands})});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || r.statusText);
-
-    // Close any existing player WebSocket
-    if (ws) { ws.close(); ws = null; }
-    isSpectator = true;
-    myRoom = d.room_code;
-    mySeat = -1;
-    roomSeats = [];
-    connectSpectatorWS();
-  } catch(e) { err.textContent = 'Error: ' + e.message; }
-}
-
-function connectSpectatorWS() {
-  if (ws && ws.readyState !== WebSocket.CLOSED) return;
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/${myRoom}/spectate`);
-
-  ws.onopen = () => {
-    badge('ok');
-  };
-
-  ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    handleMsg(msg);
-  };
-
-  ws.onclose = () => {
-    badge('off');
-    if (!ws || ws.readyState === WebSocket.CLOSED) {
-      // Auto-reconnect for spectator
-      setTimeout(() => {
-        if (!ws || ws.readyState === WebSocket.CLOSED) connectSpectatorWS();
-      }, 2000);
-    }
-  };
-
-  ws.onerror = () => badge('off');
 }
 
 async function enterRoom(code, preferSeat) {
@@ -843,29 +655,9 @@ function handleMsg(msg) {
   switch (msg.type) {
     case 'room_state':
       roomSeats = msg.seats;
-      if (msg.is_spectator) {
-        isSpectator = true;
-        mySeat = -1;
-        if (msg.speed) battleSpeed = msg.speed;
-        if (msg.num_hands) battleHands = msg.num_hands;
-        // Auto-start after short delay to let UI initialize
-        if (msg.status === 'lobby') {
-          setTimeout(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({type: 'start_game', hands: battleHands}));
-            }
-          }, 500);
-        }
-      }
-      if (msg.is_battle) {
-        // Store seat config for display
-        roomSeats = msg.seats;
-      }
-      if (!isSpectator) {
-        renderSeatGrid();
-        document.getElementById('room-status-msg').textContent =
-          msg.status === 'running' ? 'Game in progress — rejoining…' : 'Waiting for players…';
-      }
+      renderSeatGrid();
+      document.getElementById('room-status-msg').textContent =
+        msg.status === 'running' ? 'Game in progress — rejoining…' : 'Waiting for players…';
       break;
 
     case 'seat_update':
@@ -878,7 +670,7 @@ function handleMsg(msg) {
       assignCharacters();
       initGameScreen();
       showScreen('game-screen');
-      requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); renderGame(); });
+      requestAnimationFrame(() => { positionGSeats(); positionGTrickZone(); });
       break;
 
     case 'catch_up':
@@ -950,7 +742,6 @@ function handleMsg(msg) {
       break;
 
     case 'your_turn':
-      if (isSpectator) break;  // spectator never takes turns
       Sound.yourTurn();
       myTurnMoves = msg.legal_moves;
       showMovePicker(msg.legal_moves);
@@ -958,7 +749,7 @@ function handleMsg(msg) {
 
     case 'game_over':
       myTurnMoves = null;
-      if (!isSpectator) hideMovePicker();
+      hideMovePicker();
       if (msg.replay) {
         try { localStorage.setItem('pendingReplay', JSON.stringify(msg.replay)); } catch(_) {}
       }
@@ -1024,8 +815,7 @@ function positionGSeats() {
 }
 
 function buildGTrickZone() {
-  document.getElementById('gtrick-zone').innerHTML =
-    '<div id="gtrick-score-accum"></div>';
+  document.getElementById('gtrick-zone').innerHTML = '';
 }
 
 function positionGTrickZone() {
@@ -1103,13 +893,6 @@ function renderGame() {
     const badgeEl = document.getElementById('gsbadge-' + p);
     const team = realTeams[p];
     let name = p === mySeat ? `${pLabel(p)} (You)` : pLabel(p);
-    // Show AI tier/personality in battle mode
-    if (isSpectator && roomSeats[p]) {
-      const sc = roomSeats[p];
-      const tierLabel = {rule:'Rule',search:'Search',ml:'ML','multi-agent':'MA'}[sc.tier] || sc.tier || '';
-      const persLabel = sc.personality || '';
-      name += ` [${tierLabel}${persLabel?'/'+persLabel:''}]`;
-    }
     if (snap.fin[p]) {
       const pos = snap.fo.indexOf(p);
       name += pos === 0 ? ' 大贡' : ` #${pos+1}`;
@@ -1133,10 +916,9 @@ function renderGame() {
     document.getElementById('gsc-cum-'  + p).textContent = 'total ' + snap.cs[p];
 
     // Cards — your own face-up and interactive; others show face-down backs
-    // Spectators see all hands face-up
     const cardsEl = document.getElementById('ghand-' + p);
     const hand = snap.hands[p];
-    if (p === mySeat || isSpectator) {
+    if (p === mySeat) {
       // Face-up, sorted by rank then suit; data-idx = original hand index
       const sorted = sortedHand(hand);
       let ml = -18;
@@ -1145,25 +927,19 @@ function renderGame() {
         ml = Math.min(-6, -(36 - vis));
       }
       cardsEl.innerHTML = sorted.map(({c, i}) =>
-        cardHtml(c, {selectable: !isSpectator && !!myTurnMoves, selected: selectedCardIdxs.has(i), idx: i})
+        cardHtml(c, {selectable: !!myTurnMoves, selected: selectedCardIdxs.has(i), idx: i})
       ).join('');
       cardsEl.style.setProperty('--cml', ml + 'px');
-      if (!isSpectator && myTurnMoves) {
+      if (myTurnMoves) {
         cardsEl.querySelectorAll('.card').forEach(el => {
           el.addEventListener('click', () => toggleCard(parseInt(el.dataset.idx)));
         });
       }
     } else {
-      if (hand.length > 0) {
-        // Server revealed these cards (e.g. AI hands when all humans finished)
-        const sorted = sortedHand(hand);
-        cardsEl.innerHTML = sorted.map(({c}) => cardHtml(c, {})).join('');
-      } else {
-        // Face-down — use hcnt (server masks other hands to [])
-        const count = snap.hcnt ? snap.hcnt[p] : hand.length;
-        const shown = Math.min(count, 10);
-        cardsEl.innerHTML = Array(shown).fill(backCardHtml()).join('');
-      }
+      // Face-down — use hcnt (server masks other hands to [])
+      const count = snap.hcnt ? snap.hcnt[p] : hand.length;
+      const shown = Math.min(count, 10);
+      cardsEl.innerHTML = Array(shown).fill(backCardHtml()).join('');
     }
     const trueCount = snap.hcnt ? snap.hcnt[p] : snap.hands[p].length;
     document.getElementById('gcnt-' + p).textContent = trueCount + ' cards';
@@ -1198,21 +974,6 @@ function renderGame() {
     }
     tzEl.appendChild(playDiv);
   });
-
-  // Scoring accumulation — sum scoring card values from all plays in this trick
-  let accumScore = 0;
-  snap.tp.forEach(([, move]) => {
-    if (move && move.cards) {
-      move.cards.forEach(c => { accumScore += c.sv || 0; });
-    }
-  });
-  const tzScoreEl = document.getElementById('gtrick-score-accum');
-  if (!tzScoreEl) {
-    const el = document.createElement('div');
-    el.id = 'gtrick-score-accum';
-    tzEl.appendChild(el);
-  }
-  document.getElementById('gtrick-score-accum').textContent = accumScore > 0 ? '分牌 +' + accumScore : '';
 
   // Score panel
   const scoreEl = document.getElementById('g-score-table');
@@ -1299,29 +1060,17 @@ function showPassBadge(seat) {
 
 function renderMyHandStrip() {
   const msg = document.getElementById('turn-msg');
-  const passBtn = document.getElementById('pass-btn');
-  const playBtn = document.getElementById('play-btn');
-
-  if (isSpectator) {
-    const speedLabel = {normal:'Normal',fast:'Fast',instant:'Instant'}[battleSpeed] || battleSpeed;
-    msg.textContent = `🤖 AI Battle · ${speedLabel} · Hand ${gameSnap ? gameSnap.hn : '?'}`;
-    msg.style.color = '#589bdc';
-    passBtn.style.display = 'none';
-    playBtn.style.display = 'none';
-    return;
-  }
-
   if (!myTurnMoves) {
     msg.textContent = 'Waiting for your turn…';
     msg.style.color = '#829672';
-    passBtn.style.display = 'none';
-    playBtn.disabled = true;
-    playBtn.textContent = 'Play';
+    document.getElementById('pass-btn').style.display = 'none';
+    document.getElementById('play-btn').disabled = true;
+    document.getElementById('play-btn').textContent = 'Play';
   } else {
     msg.textContent = 'Your turn — select cards';
     msg.style.color = '#ffe42d';
     const hasPass = myTurnMoves.some(m => m.is_pass);
-    passBtn.style.display = hasPass ? '' : 'none';
+    document.getElementById('pass-btn').style.display = hasPass ? '' : 'none';
     updatePlayBtnState();
   }
 }
@@ -1375,94 +1124,40 @@ function hideMovePicker() {
 
 function showGameOverBanner() {
   const banner = document.getElementById('game-over-banner');
-  const reviewLink = document.getElementById('review-link');
-  const newGameBtn = banner.querySelector('button');
-
-  if (isSpectator) {
-    reviewLink.textContent = '▶ Review Battle Replay';
-    newGameBtn.textContent = 'New Battle';
-    newGameBtn.onclick = () => {
-      if (ws) { ws.close(); ws = null; }
-      isSpectator = false;
-      myRoom = null;
-      mySeat = -1;
-      showScreen('lobby-screen');
-    };
-  } else {
-    reviewLink.textContent = '▶ Review Game';
-    newGameBtn.textContent = 'New Game';
-    newGameBtn.onclick = () => location.reload();
-  }
   banner.style.display = 'flex';
 }
 
 function showMoGongDisplay(result) {
   const mg = result.mo_gong || [];
   const hands = result.mg_hands || {};
-  const allHands = result.all_hands || {};
 
-  // Check if all human players have finished
-  let allHumansDone = false;
-  const humanSeats = [];
-  for (let p = 0; p < 6; p++) {
-    if (roomSeats[p] && roomSeats[p].mode === 'human') humanSeats.push(p);
-  }
-  if (humanSeats.length > 0) {
-    allHumansDone = humanSeats.every(p => !allHands[String(p)] || allHands[String(p)].length === 0);
-  }
-
-  // Collect AI remaining cards when all humans done
-  const aiCards = {};
-  if (allHumansDone) {
-    for (let p = 0; p < 6; p++) {
-      const info = roomSeats[p] || {seat: p, mode: 'ai'};
-      if (info.mode === 'ai' && allHands[String(p)] && allHands[String(p)].length > 0) {
-        aiCards[p] = allHands[String(p)];
-      }
-    }
-  }
-  const hasAiCards = Object.keys(aiCards).length > 0;
-
-  // If nothing to show, skip to result overlay
-  const hasMgCards = mg.some(p => hands[String(p)] && hands[String(p)].length > 0);
-  if (!hasMgCards && !hasAiCards) {
+  // If no mo_gong players (all finished), skip to result overlay
+  const hasCards = mg.some(p => hands[String(p)] && hands[String(p)].length > 0);
+  if (!hasCards) {
     showHandEndOverlay(result, pendingSnap);
     return;
   }
 
   const display = document.getElementById('mogong-display');
-  let html = '';
 
-  function renderPlayerCards(p, cards) {
+  let html = '<div class="mg-title">Hand Over — 末贡 Remaining Cards</div>';
+
+  mg.forEach(p => {
+    const cards = hands[String(p)] || [];
+    if (!cards.length) return;
+    // Sort cards by rank, then suit
     const sorted = [...cards].sort((a, b) => {
       const rd = (RANK_SORT[a.rl] ?? 0) - (RANK_SORT[b.rl] ?? 0);
       if (rd !== 0) return rd;
       return (SUIT_SORT[a.s] ?? 0) - (SUIT_SORT[b.s] ?? 0);
     });
+
     const scoringCount = sorted.filter(c => c.sv > 0).length;
-    let h = '<div class="mg-player-name">' + pLabel(p) + ' (' + sorted.length + ' cards';
-    if (scoringCount > 0) h += ', <span style="color:#ffdc3c">' + scoringCount + ' scoring</span>';
-    h += ')</div>';
-    h += '<div class="mg-cards">' + sorted.map(c => cardHtml(c, {})).join('') + '</div>';
-    return h;
-  }
-
-  // AI remaining cards section (show first when all humans done)
-  if (hasAiCards) {
-    html += '<div class="mg-title">AI Players\' Remaining Cards</div>';
-    for (let p = 0; p < 6; p++) {
-      if (aiCards[p]) html += renderPlayerCards(p, aiCards[p]);
-    }
-  }
-
-  // Mo gong section (may overlap with AI cards, show if different players)
-  if (hasMgCards && !allHumansDone) {
-    html += '<div class="mg-title">Hand Over — 末贡 Remaining Cards</div>';
-    mg.forEach(p => {
-      const cards = hands[String(p)] || [];
-      if (cards.length) html += renderPlayerCards(p, cards);
-    });
-  }
+    html += '<div class="mg-player-name">' + pLabel(p) + ' (' + sorted.length + ' cards';
+    if (scoringCount > 0) html += ', <span style="color:#ffdc3c">' + scoringCount + ' scoring</span>';
+    html += ')</div>';
+    html += '<div class="mg-cards">' + sorted.map(c => cardHtml(c, {})).join('') + '</div>';
+  });
 
   html += '<button id="mogong-continue-btn" onclick="onMoGongContinue()">继续</button>';
 
@@ -1515,12 +1210,8 @@ function showHandEndOverlay(result, snap) {
     const isHuman = info.mode === 'human';
     const isMe = p === mySeat;
     const isRed = result.red && result.red.includes(p);
-    const icon = (isSpectator && info.tier) ? '' : (isHuman ? '👤' : '🤖');
-    let name = pLabel(p) + (isMe ? ' (You)' : '');
-    if (isSpectator && info.tier) {
-      const tierName = {rule:'Rule',search:'Search',ml:'ML','multi-agent':'MA'}[info.tier] || info.tier;
-      name += ' [' + tierName + (info.personality ? '/' + info.personality : '') + ']';
-    }
+    const icon = isHuman ? '👤' : '🤖';
+    const name = pLabel(p) + (isMe ? ' (You)' : '');
     const col = isRed ? '#dc4848' : '#589bdc';
 
     let tag = '';
@@ -1538,42 +1229,6 @@ function showHandEndOverlay(result, snap) {
     document.getElementById('pgo-mo-gong').textContent = '末贡: ' + mg.map(p => pLabel(p)).join(', ');
   } else {
     document.getElementById('pgo-mo-gong').textContent = '';
-  }
-
-  // Different buttons for spectator vs player
-  const startBtn = document.getElementById('pgo-start-btn');
-  const exitBtn = document.getElementById('pgo-exit-btn');
-  if (isSpectator) {
-    startBtn.textContent = '下一手 ▶';
-    startBtn.onclick = () => {
-      document.getElementById('pre-game-overlay').style.display = 'none';
-      hideMoGongDisplay();
-      showingHandEnd = false;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({type: 'continue_hand'}));
-      }
-    };
-    exitBtn.textContent = '退出观战';
-    exitBtn.onclick = () => {
-      document.getElementById('pre-game-overlay').style.display = 'none';
-      hideMoGongDisplay();
-      if (showingHandEnd) {
-        showingHandEnd = false;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({type: 'continue_hand'}));
-        }
-      }
-      if (ws) { ws.close(); ws = null; }
-      isSpectator = false;
-      myRoom = null;
-      mySeat = -1;
-      showScreen('lobby-screen');
-    };
-  } else {
-    startBtn.textContent = '开始新牌局';
-    startBtn.onclick = () => startNewHand();
-    exitBtn.textContent = '退出牌局';
-    exitBtn.onclick = () => exitToRoom();
   }
 
   document.getElementById('pre-game-overlay').style.display = 'flex';
