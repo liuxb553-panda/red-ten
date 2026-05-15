@@ -1,8 +1,11 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from cards import Card
+
+if TYPE_CHECKING:
+    from moves import Move
 
 
 class Team(Enum):
@@ -24,7 +27,8 @@ class HandResult:
     non_red_team: list[int]
     da_gong: Optional[int]
     mo_gong: list[int]
-    mo_gong_hands: dict               # {player_id: [remaining cards]}
+    mo_gong_hands: dict               # {player_id: [remaining cards for mo_gong]}
+    all_remaining_hands: dict          # {player_id: [remaining cards]} — all unfinished players at hand end
     da_gong_mo_gong_same_team: bool
     base_scores: dict                 # {Team.RED: int, Team.NON_RED: int}
     final_team_scores: dict           # {Team.RED: int, Team.NON_RED: int}
@@ -53,7 +57,7 @@ class GameState:
     played_cards: list[Card] = field(default_factory=list)
 
     # Current trick state
-    current_trick: list[tuple[int, object]] = field(default_factory=list)  # (player_idx, Move)
+    current_trick: list[tuple[int, Move]] = field(default_factory=list)  # (player_idx, Move)
     trick_leader: int = 0
 
     # Counter-clockwise turn order starting from trick_leader

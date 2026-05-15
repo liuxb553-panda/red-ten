@@ -2,6 +2,199 @@
 
 ---
 
+## 2026-05-09
+
+### 多智能体 AI 决策系统 (Phase 1-7)
+
+**设计文档**: `docs/MULTI_AGENT_AI_DESIGN.md`
+
+实现完整的 5 阶段多智能体决策管线，替代原有的单一规则/搜索/ML 玩家。每个 AI 玩家由多个内部智能体协作决策：
+
+**Phase 1 — 分析层** (`src/agents/analyst_*.py` 5个文件):
+- `HandAnalyst` — 分析手牌结构（炸弹数量/等级、顺子潜力、最短完成路径）
+- `PositionAnalyst` — 分析座位位置（首出/末位、出牌权归属、被压风险）
+- `TeamAnalyst` — 分析队友状态（红十暴露程度、是否需要帮助、团队完成进度）
+- `OpponentAnalyst` — 分析对手状态（剩余牌数、威胁等级、身份推测）
+- `RiskAnalyst` — 综合风险评估（可见炸弹数、分牌暴露风险、被关概率）
+- 分析结果汇总到 `SharedAnalysis` 数据类，供下游消费
+
+**Phase 1.5 — 战略层** (`src/agents/principle_*.py` 2个文件):
+- `GuanRenPrinciple` — 关人原则：我方已有 ≥2 人出完时激活，全力阻止对手出完
+- `AvoidBeingGuanedPrinciple` — 生存原则：对手已有 ≥1 人出完、我方无人出完时激活，必须尽快破关
+- `StrategyDirector` — 根据 `principle_intensities` 合并活跃原则的权重修正
+- 每个原则输出 `rule_weight_modifiers`，叠加到 Phase 2 的规则权重
+
+**Phase 2 — 研究员层** (`src/agents/researcher_*.py` 3个文件):
+- `BullishResearcher` (激进型) — 关注进攻规则（intercept, score_rush, speed_first）
+- `BearishResearcher` (保守型) — 关注防守/团队/时机规则（safe_play, identity_protect, friendly_fire, help_teammate, last_act, delay_bomb）
+- `WildcardResearcher` (诡诈型) — 加载全部 9 条规则，加随机扰动 ±0.15，从 top-3 加权随机选择
+- `ResearcherBase` — 共享逻辑：人格权重覆盖 + 战略修正量叠加，最终权重 clamp [0, 3.0]
+
+**Phase 3 — 辩论系统** (`src/agents/brain.py` `_run_debate()`):
+- 按人格配置的 `debate_rounds` 进行多轮辩论
+- 每轮比较各研究员的 `preferred_category`，冲突时降低信心：`confidence *= 0.8^conflicts`
+
+**Phase 4 — 9 条战术规则** (`src/agents/rule_*.py` 9个文件):
+
+| 规则 | 类别 | 默认权重 | 触发条件 |
+|------|------|----------|----------|
+| `InterceptRule` | offensive | 0.8 | 对手 ≤2 张牌时出炸弹 |
+| `FriendlyFireRule` | teamwork | 1.0 | 当前领先者是队友时不出炸弹 |
+| `LastActRule` | timing | 1.0 | 末位出牌：队友领先则 pass，对手领先则出牌 |
+| `SafePlayRule` | defensive | 0.7 | 有未见面炸弹时慎出分牌 |
+| `IdentityProtectRule` | defensive | 1.0 | 红十未暴露时不打出红十 |
+| `HelpTeammateRule` | teamwork | 0.8 | 队友被压制时出炸弹解救 |
+| `DelayBombRule` | timing | 0.6 | 手牌多且无紧急威胁时保留炸弹 |
+| `ScoreRushRule` | offensive | 0.8 | 优先出分牌（5/10/K）抢分 |
+| `SpeedFirstRule` | offensive | 0.7 | 手牌多时优先出多张牌加速清空 |
+
+**Phase 5 — 决策融合** (`src/agents/lead_agent.py`):
+- 基线启发式评分：BOMB=0.85, CONSEC_TRIPLES=0.75, TRIPLE_PAIR=0.70, STRAIGHT=0.55, ..., PASS=0.05
+- 融合公式：`final = w_base × baseline + w_opinion × Σ(researcher_score × confidence) + w_random × ε`
+- 战略紧迫度转移：最多 15% 权重从 baseline 转移到 opinion
+
+**Phase 6 — 6 种人格配置** (`src/agents/personalities.py`):
+
+| 人格 | 研究员 | 辩论轮数 | 融合权重 (B/O/R) | 特征 |
+|------|--------|----------|-------------------|------|
+| 激进型 | bullish | 0 | 0.30/0.70/0.00 | 强进攻，弱防守，speed_first=1.5 |
+| 保守型 | bearish | 0 | 0.30/0.70/0.00 | 强防守，安全优先，identity_protect=1.5 |
+| 均衡型 | bull+bear | 2 | 0.40/0.60/0.00 | 全部默认权重，2轮辩论 |
+| 诡诈型 | bull+wild | 1 | 0.20/0.60/0.20 | 20% 随机噪声，不可预测 |
+| 配合型 | bull+bear | 2 | 0.35/0.50/0.15 | 团队协作权重 15%，friendly_fire=1.3 |
+| 自私型 | bullish | 0 | 0.25/0.55/0.20 | 20% 随机，弱团队，强抢分 |
+
+**Phase 7 — 集成** (`src/session.py`):
+- 新增 `"multi-agent"` tier：6 个默认人格 MultiAgentPlayer 对战
+- 新增 `"personalities"` tier：6 种不同人格各一，用于观察人格差异
+
+**基础设施**:
+- `src/agents/rules_base.py` — `StrategyRule` ABC 和 `RuleRegistry` 注册表
+- `src/agents/researcher_base.py` — `ResearcherBase` ABC，权重计算与分数聚合
+- `src/agents/shared_analysis.py` — `SharedAnalysis`、`StrategicContext`、`ResearcherOpinion` 数据类
+- `src/agents/brain.py` — `MultiAgentBrain` 编排完整管线，`MultiAgentPlayer` 集成到游戏引擎
+- `pyproject.toml` pythonpath 新增 `"src/agents"`
+
+**Bug 修复 — 生存原则权重错误** (`principle_avoid_being_guaned.py`):
+- `intercept: -0.3 → +0.4`：原值在生存模式下反而不鼓励炸弹拦截，导致被关
+- `delay_bomb: +0.2 → -0.4`：原值在生存模式下鼓励保留炸弹，与破关目标矛盾
+- 修复后炸弹得分从 +0.500 提升到 +1.200（与 pass 的差距从 +0.620 扩大到 +1.320）
+
+**文件变更**: `src/agents/` 目录 25 个新文件, `src/session.py` (新增 2 个 tier), `pyproject.toml` (pythonpath), `src/moves.py` (新增 CONSEC_TRIPLES 牌型 + 顺子验证重构)
+
+---
+
+### MLP 值网络 — 多智能体自学习基础
+
+**设计文档**: `docs/MULTI_AGENT_AI_DESIGN.md` Section 14
+
+**问题**: MultiAgentPlayer 的 LeadAgent 使用硬编码启发式 baseline（BOMB=0.85, SINGLE=0.10...），不随训练提高。MLPlayer 有成熟的自对弈训练管线，但和 MultiAgentPlayer 不互通。
+
+**方案**: 将 MLP 值网络嵌入 LeadAgent 替换启发式 baseline。MLP 提供"局面客观评估"，研究员规则提供"风格主观偏好"，融合公式不变。
+
+**架构改动**:
+- `lead_agent.py` — 新增 `model`/`n_mlp_samples`/`p_red`/`player_id` 参数；` _mlp_baseline_scores()` 复用 MLPlayer 的 `sample_world → simulate_trick → extract_features → MLP` 管线，min-max 归一化到 [0,1]；原启发式改名为 `_heuristic_baseline()`
+- `brain.py` — `MultiAgentBrain.__init__()` 新增 `model_path`/`epsilon`/`device` 参数，自动加载 MLP 模型；`decide()` 新增 ε-greedy 探索；`_fuse_decision()` 传递 model + p_red 给 LeadAgent
+- `brain.py` — `MultiAgentPlayer.__init__()` 新增 `model_path`/`epsilon`/`device` 参数
+- `session.py` — 新增 `multi-agent-mlp` 和 `multi-agent-mlp-vs-rule` tier
+- `benchmark.py` — path 新增 `src/agents`
+
+**向后兼容**: 不传 `model_path` 时行为完全不变（回退到启发式 baseline）。已有 6 种人格配置、已有 benchmark tier 不受影响。
+
+**Benchmark 验证**:
+- `multi-agent-vs-rule` (无 MLP): 47.0% vs RuleBased (200 局)
+- `multi-agent-mlp-vs-rule` (含 MLP): 38.0% vs RuleBased (50 局)
+
+MLP 版胜率较低是预期的——现有 MLP 模型是用 MLPlayer 搜索数据训练的，尚未在 MultiAgentPlayer 决策管线上训练。**后续需要跑基于人格的自对弈训练**（Section 14.4）来让 MLP 适配多智能体融合框架。
+
+---
+
+### 设计文档更新
+
+- Section 14 新增「MLP 值网络 — 多智能体自学习」完整设计
+- Section 13.1 S2 生存原则权重修正表更新：`intercept: −0.3→+0.4`, `delay_bomb: +0.2→−0.4`（与代码修复一致）
+
+---
+
+### CONSEC_TRIPLES 牌型支持
+
+**文件**: `src/moves.py`
+
+**功能**: 新增 `CardType.CONSEC_TRIPLES` (连三条)，支持如 333-444-555 的连续三条出牌。`Move.type_label`、`get_legal_moves`、`identify_move` 均完成适配。
+
+**顺子验证重构**: `_is_valid_straight()` 重写，明确 A 的双重角色（常主牌 or 数字1）和 2 的限制（只能作数字2，不能作高端）。
+
+---
+
+### AI 自对弈观战模式 (AI Self-Play Spectator Mode)
+
+**功能**: 在现有人机对战网页界面基础上，新增 AI vs AI 观战模式。用户可配置 6 个座位的 AI 类型和人格，实时观看全牌面对战。
+
+**设计**: 新增观战 WebSocket 端点 `/ws/{code}/spectate`，与现有 `/ws/{room}/{seat}` 并行。观战者接收非 POV 游戏事件（全部手牌可见），无需出牌操作。
+
+**服务端改动** (`src/room_manager.py`, `src/web_server.py`, `src/session.py`):
+- `SeatConfig(tier, personality)` + `BattleConfig(seats, speed, num_hands)` — 按座 AI 配置
+- `GameRoom` 新增 spectator 支持：`attach_spectator()`/`detach_spectator()`/`_spectator_send()`
+- `broadcast_event()` — 始终向观战者发送非 POV 事件
+- `_wait_for_continue()` — 无人类玩家时按速度自动继续（normal 3s / fast 1.5s / instant 1s）
+- `room_state_msg()` — 返回座位 tier/personality 信息
+- `POST /api/battle/create` — 创建 AI 对战房间
+- `GET /api/tiers` — 返回可用 AI tier 和 personality 列表
+- `WS /ws/{room_code}/spectate` — 观战 WebSocket
+- `SPEED_DELAYS` — 三档速度控制（normal/fast/instant）
+- 新增 `multi-agent` tier 到 lobby tier 选项
+
+**客户端改动** (`web/play.html`):
+- Lobby 新增 "AI vs AI Battle" 按钮，跳转到战斗配置界面
+- 战斗配置界面：6 行座位配置（tier + personality 下拉）、速度选择、局数选择
+- Lobby 房间列表显示战斗房间，提供 "Watch" 按钮
+- 观战模式：全部手牌正面显示、AI tier/personality 显示在座位名旁
+- 底栏替代为 "AI Battle · Speed · Hand N" 状态条
+- 牌局结束覆盖层按钮适配（下一手/退出观战）
+- Game Over 覆盖层按钮适配（New Battle）
+
+**向后兼容**: `GameRoom.__init__` 同时支持旧签名 `(code, ai_tier)` 和新签名 `(code, config=BattleConfig)`。旧人机对战模式完全不受影响。
+
+**文件变更**: `src/room_manager.py` (spectator + BattleConfig), `src/web_server.py` (3 个新端点 + agents path fix), `src/session.py` (AVAILABLE_TIERS/AVAILABLE_PERSONALITIES/make_players_from_config), `web/play.html` (~200 行新增/修改)
+
+---
+
+## 2026-05-08
+
+### 测试基础设施 (P0 + P1)
+
+**P0.1 — pytest 迁移**: 
+- 创建 `pyproject.toml`，配置 `[tool.pytest.ini_options] pythonpath = ["src"]`
+- 移除 `tests/test_legal_moves.py` 和 `tests/test_integration.py` 中的 `sys.path.insert` 技巧
+- 所有 15 个测试通过（7 个 legal_moves + 8 个 hypothesis 属性测试）
+
+**P0.2 — hypothesis 属性测试**: 
+- 新建 `tests/test_moves_properties.py`，8 个不变量测试覆盖 `get_legal_moves`、`identify_move`、`beats`
+- 测试不变量：出牌只用手中卡牌、无重复出牌、跟牌时必有 PASS、跟牌必压过当前牌型、beats 反对称、炸弹传递性、identify_move 往返一致性
+- 11 个 `@example` 用例覆盖所有牌型（炸弹/顺子/连对/连三条/王牌炸弹）
+- 顺带发现并修复了 `cards.py` 中红十 `straight_rank(ace_low=True)` 忽略 ace_low 参数的 bug
+
+**P1.1 — mypy 类型检查**: 
+- 创建 `mypy.ini`，配置 `mypy src/` 零错误
+- `src/state.py`: `current_trick: list[tuple[int, object]]` → `list[tuple[int, Move]]`，一次性解决 15+ 个派生类型错误
+- `src/hand.py`: 添加 `team_of()` 辅助函数处理 `Team | None` 索引
+- `src/evaluator.py`: 添加 `_bomb_sort_key()` 辅助函数处理 `bomb_key | None`
+- `src/session.py`: 修复 `continue_cb` callable 类型注解
+- `src/cards.py`: 修复红十 `straight_rank(ace_low)` bug
+- 其余精确 `# type: ignore` 注释（AI/训练模块）
+
+**P1.2 — Claude Code Stop hook**: 
+- `.claude/settings.json` 添加 Stop hook，每次对话结束前自动运行 `python -m pytest tests/ -q`
+
+**P1.3 — Git pre-commit hook**: 
+- `.git/hooks/pre-commit` — 每次 `git commit` 前自动运行 pytest
+- 测试失败则阻止提交，确保坏代码不会进入版本历史
+- 与 Stop hook 互补：Stop hook 覆盖 AI 辅助编码，pre-commit 覆盖手动 git 操作
+
+**文件变更**: `pyproject.toml` (新建), `mypy.ini` (新建), `tests/test_moves_properties.py` (新建), `.git/hooks/pre-commit` (新建), `.claude/settings.json` (hook), 16 个源文件类型修复
+
+---
+
 ## 2026-05-02
 
 ### 1. 单元测试基础设施
@@ -186,3 +379,17 @@
 - `_is_hand_over()`: `>= 5` 改为 `>= 6`（安全兜底，主要结束条件由 `_check_terminal()` 控制）
 - `_check_terminal()`: 当一方全员完成且对方有部分完成时，返回 `TerminalKind.NORMAL`（不再返回 None）
 - `_compute_result()`: 在 NORMAL 路径中，扫描未完成玩家手中剩余的分牌（5/10/K），将其分值转移给对方队伍
+
+---
+
+### 14. 出牌区恢复单中心显示 + 分牌点数累加
+
+**文件**: `web/play.html`
+
+**问题**: 上游代码将出牌区改为多槽位布局（`.trick-play` 显示本轮所有出牌），用户要求恢复之前的单中心显示设计。
+
+**修改**:
+- 移除 `.trick-play`、`.trick-play-label`、`.trick-play-cards` CSS，恢复 `#gtrick-cards` + `#gtrick-name` + `#gtrick-score-accum` 样式
+- `buildGTrickZone()` 创建三个子元素：出牌卡牌区、玩家名称、分牌累加分值
+- `renderGame()` 出牌区逻辑改为：仅显示最后一手非过牌的出牌（当前最佳），被压制时自动更新；本轮结束时清空
+- 新增分牌点数累加显示：遍历本轮所有出牌的 `sv` 值求和，显示为"分牌 +N"，与出牌内容同步清除

@@ -1,0 +1,82 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #0c1a10;
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", "Microsoft YaHei", Arial, sans-serif;
+  color: #e1e4d7; }
+
+/* ── Splash screen ──────────────────────────────────────────────────────── */
+#splash {
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; position: relative;
+}
+
+.splash-title {
+  font-size: 96px; font-weight: 900; color: #ffe42d;
+  text-shadow: 0 0 40px rgba(255,228,45,0.5), 0 4px 8px rgba(0,0,0,0.6);
+  letter-spacing: 12px;
+  animation: splashIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  opacity: 0; transform: scale(0.3);
+}
+
+@keyframes splashIn {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-8deg); }
+  100% { opacity: 1; transform: scale(1)   rotate(0deg);   }
+}
+
+.splash-sub {
+  font-size: 18px; color: #829672; margin-top: 16px;
+  animation: fadeUp 0.6s 0.3s ease-out forwards;
+  opacity: 0; transform: translateY(12px);
+}
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0);    }
+}
+
+.splash-hint {
+  position: absolute; bottom: 44px; font-size: 13px; color: #4a6a4a;
+  animation: fadeUp 0.6s 0.6s ease-out forwards;
+  opacity: 0; transform: translateY(12px);
+}
+
+/* ── Selection screen ────────────────────────────────────────────────────── */
+#select {
+  display: none; height: 100vh; align-items: center; justify-content: center;
+  flex-direction: column; gap: 24px;
+}
+
+.menu-btn {
+  width: 260px; padding: 18px 0; font-size: 22px; font-weight: bold;
+  border: 2px solid #ffe42d; border-radius: 12px; cursor: pointer;
+  text-align: center; transition: all 0.2s; letter-spacing: 2px;
+}
+
+.menu-btn.play { background: #1a4a2c; color: #ffe42d; }
+.menu-btn.play:hover { background: #2a6a3c; transform: scale(1.04); }
+
+.menu-btn.train { background: #1a2e4a; color: #72b8ff; border-color: #72b8ff; }
+.menu-btn.train:hover { background: #2a446a; transform: scale(1.04); }
+
+.menu-btn.replay { background: #1a1a2e; color: #c8a0ff; border-color: #c8a0ff; }
+.menu-btn.replay:hover { background: #2e2e4a; transform: scale(1.04); }
+
+.menu-label {
+  font-size: 12px; color: #829672; text-align: center; margin-top: 4px;
+}
+
+/* ── Card-style decoration ────────────────────────────────────────────────── */
+.splash-cards {
+  display: flex; gap: 6px; margin-top: 24px;
+  animation: fadeUp 0.6s 0.4s ease-out forwards;
+  opacity: 0; transform: translateY(12px);
+}
+
+.mini-card {
+  width: 30px; height: 44px; border-radius: 3px; border: 1px solid #888;
+  font-size: 10px; display: flex; align-items: center; justify-content: center;
+}
+
+.mini-card.r10 { background: #ffd200; color: #8c2d00; }
+.mini-card.red { background: #fffce2; color: #c30a0a; }
+.mini-card.blk { background: #e8e8dc; color: #121212; }
+.mini-card.jok { background: #7337c3; color: #fff; }

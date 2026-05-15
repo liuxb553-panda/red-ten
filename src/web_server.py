@@ -19,6 +19,7 @@ Routes:
 from __future__ import annotations
 import sys, os, random, re, glob, asyncio, argparse
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel
 from serializers import ser_event, ser_event_pov
-from room_manager import RoomManager
+from room_manager import RoomManager, SeatConfig, BattleConfig
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
@@ -107,16 +108,22 @@ class JoinRoomReq(BaseModel):
 
 @app.get("/api/rooms")
 def list_rooms():
-    return [
-        {
+    result = []
+    for room in rooms._rooms.values():
+        if room.status == "done":
+            continue
+        entry: dict = {
             "code":        room.room_code,
             "status":      room.status,
             "ai_tier":     room.ai_tier,
             "human_seats": sum(1 for s in room.seats if s.is_human),
         }
-        for room in rooms._rooms.values()
-        if room.status != "done"
-    ]
+        if room.config is not None:
+            entry["is_battle"] = True
+            entry["speed"] = room.config.speed
+            entry["spectators"] = room._has_spectators() and 1 or 0
+        result.append(entry)
+    return result
 
 
 @app.post("/api/room/create")
@@ -146,6 +153,75 @@ def join_room(code: str, req: JoinRoomReq):
             "status": room.status,
             "seats": [{"seat": i, "mode": "human" if s.is_human else "ai"}
                       for i, s in enumerate(room.seats)]}
+
+
+# ── AI battle / spectator ────────────────────────────────────────────────────
+
+class BattleConfigReq(BaseModel):
+    seats: list[dict]         # [{"tier":"multi-agent","personality":"aggressive"}, ...]
+    speed: str = "normal"
+    num_hands: int = 6
+
+
+@app.post("/api/battle/create")
+def create_battle(req: BattleConfigReq):
+    config = BattleConfig(
+        seats=[SeatConfig(**s) for s in req.seats],
+        speed=req.speed,
+        num_hands=req.num_hands,
+    )
+    room = rooms.create_battle(config)
+    return {"room_code": room.room_code}
+
+
+@app.get("/api/tiers")
+def get_tiers():
+    from session import AVAILABLE_TIERS, AVAILABLE_PERSONALITIES
+    return {"tiers": AVAILABLE_TIERS, "personalities": AVAILABLE_PERSONALITIES}
+
+
+@app.websocket("/ws/{room_code}/spectate")
+async def ws_spectate(websocket: WebSocket, room_code: str):
+    await websocket.accept()
+
+    room = rooms.get(room_code)
+    if not room:
+        await websocket.send_json({"type": "error", "msg": "Room not found"})
+        await websocket.close(code=1008)
+        return
+
+    loop = asyncio.get_running_loop()
+    room.attach_spectator(websocket, loop)
+
+    # Send room state with spectator flag
+    state = room.room_state_msg(-1)
+    state["is_spectator"] = True
+    await websocket.send_json(state)
+
+    # Catch-up if game already running
+    if room.status == "running" and room._renderer:
+        events = [ser_event(e) for e in room._renderer.events]
+        await websocket.send_json({"type": "catch_up", "events": events})
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "start_game":
+                num_hands = max(1, min(20, int(data.get("hands", room.config.num_hands if room.config else 6))))
+                if room.status == "lobby":
+                    room.start(num_hands=num_hands)
+                    seats_info = [{"seat": i, "mode": "human" if s.is_human else "ai"}
+                                  for i, s in enumerate(room.seats)]
+                    room.broadcast({"type": "game_started", "seats": seats_info})
+                    room._spectator_send({"type": "game_started", "seats": seats_info})
+
+            elif msg_type == "continue_hand":
+                room.signal_continue()
+
+    except WebSocketDisconnect:
+        room.detach_spectator(websocket)
 
 
 @app.post("/api/debug-flag/{code}")

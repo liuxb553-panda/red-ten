@@ -27,3 +27,17 @@ This prints the legal moves, the human player's current hand, the current trick 
 ```bash
 python src/web_server.py   # http://localhost:5173
 ```
+
+## Testing (P0+P1 done, P2 deferred)
+
+- **pytest** ✅ — `pyproject.toml` with `pythonpath = ["src"]`, 15 tests passing
+- **hypothesis** ✅ — `tests/test_moves_properties.py` with 8 invariant tests
+- **mypy** ✅ — `mypy.ini` configured, zero type errors
+- **Stop hook** ✅ — auto-runs `python -m pytest tests/ -q` before each turn ends
+- **CI** ⬜ — GitHub Actions (deferred)
+
+Run verification:
+```bash
+python -m pytest tests/ -v --tb=short
+mypy src/
+```

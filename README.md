@@ -259,6 +259,48 @@ Output shows the legal moves offered at that moment, the human player's full han
 
 ---
 
+## Testing
+
+### Run tests
+
+```bash
+python -m pytest tests/ -v     # 15 tests: 7 legal_moves + 8 hypothesis properties
+mypy src/                      # zero type errors
+```
+
+### What's in place
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| **pytest** | ✅ | `pyproject.toml` with `pythonpath = ["src"]`, no `sys.path` hacks |
+| **hypothesis** | ✅ | `tests/test_moves_properties.py` — 8 invariant tests covering `get_legal_moves`, `identify_move`, `beats` |
+| **mypy** | ✅ | `mypy.ini`, all type errors fixed (zero), 277 annotated functions validated |
+| **Stop hook** | ✅ | `.claude/settings.json` auto-runs `pytest -q` before each conversation ends |
+| **CI** | ⬜ | GitHub Actions (deferred) |
+
+### Property-based test invariants (`tests/test_moves_properties.py`)
+
+- No legal move contains cards not in the player's hand
+- `get_legal_moves()` never returns duplicates
+- PASS is always present in legal moves when following
+- Following moves always beat the current best play
+- `beats()` is asymmetric (if A beats B, B never beats A)
+- Bomb hierarchy is transitive
+- `identify_move()` roundtrips correctly for all legal moves
+- `identify_move()` accepts valid card sets for every CardType
+
+### Bugs found by hypothesis
+
+- **Red Ten `straight_rank(ace_low=True)`**: ♥10 ignored the `ace_low` parameter, producing wrong straight rank (16 instead of 9). Fixed in `src/cards.py`.
+
+### Test coverage
+
+| Tested (8/22) | Untested (14/22) |
+|---|---|
+| `moves.py`, `cards.py`, `hand.py`, `state.py`, `serializers.py`, `rule_player.py`, `search_player.py`, `room_manager.py` | `evaluator.py`, `features.py`, `identity.py`, `collect_data.py`, `train_model.py`, `train_selfplay.py`, `benchmark.py`, `ml_player.py`, `gui.py`, `gui_renderer.py`, `logger.py`, `session.py`, `web_server.py`, `debug_inspect.py` |
+
+---
+
 ## Troubleshooting
 
 **"No module named torch"** — activate your virtual environment first.

@@ -116,10 +116,39 @@ class Card:
 
     def straight_rank(self, ace_low: bool = False) -> int:
         if self.is_red_ten():
+            if ace_low:
+                return int(Rank.TEN) - 1   # 9, same as regular ten in ace_low
             return _STRAIGHT_RANK_MAP[Rank.TEN]
-        if ace_low and self.rank == Rank.ACE:
+        if ace_low:
+            if self.rank == Rank.ACE:
+                return 0   # A as 1
+            if self.rank == Rank.TWO:
+                return 1   # 2 as 2
+            r = int(self.rank)
+            if 3 <= r <= 13:
+                return r - 1  # 3→2, 4→3, ..., K→12
             return 0
         return _STRAIGHT_RANK_MAP.get(int(self.rank), 0)
+
+    def consec_pair_rank_high(self) -> int:
+        """Rank for consecutive pairs: A=14 (常主牌), K=13, ..., 3=3. 2 excluded."""
+        r = int(self.rank)
+        if r == Rank.ACE:
+            return 14
+        if 3 <= r <= 13:
+            return r
+        return 0
+
+    def consec_pair_rank_low(self) -> int:
+        """Rank for consecutive pairs: A=1, 2=2, 3=3, ..., K=13."""
+        r = int(self.rank)
+        if r == Rank.ACE:
+            return 1
+        if r == Rank.TWO:
+            return 2
+        if 3 <= r <= 13:
+            return r
+        return 0
 
     def is_scoring(self) -> bool:
         return self.rank in (Rank.FIVE, Rank.TEN, Rank.KING)

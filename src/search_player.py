@@ -89,7 +89,7 @@ def evaluate(state: GameState, sampled_hands: list[list[Card]],
     # 1. Captured trick-point advantage
     ally_pts = sum(trick_scores[p] for p in allies)
     opp_pts  = sum(trick_scores[p] for p in opponents)
-    score    = (ally_pts - opp_pts) * 1.0
+    score: float = (ally_pts - opp_pts) * 1.0
 
     # 2. Scoring cards remaining
     ally_future = sum(c.score_value() for p in allies  for c in sampled_hands[p])

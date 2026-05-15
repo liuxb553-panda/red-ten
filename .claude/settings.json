@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(rm -rf src/agents/__pycache__)",
+      "Bash(rm -f .claude/settings.json)",
+      "Bash(rm -f hand_end_test.png)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -8,14 +8,15 @@ from cards import Card, Rank, Suit, _SINGLE_RANK_MAP
 
 
 class CardType(IntEnum):
-    PASS          = 0
-    SINGLE        = 1
-    PAIR          = 2
-    TRIPLE        = 3
-    TRIPLE_PAIR   = 4
-    STRAIGHT      = 5
-    CONSEC_PAIRS  = 6
-    BOMB          = 7
+    PASS           = 0
+    SINGLE         = 1
+    PAIR           = 2
+    TRIPLE         = 3
+    TRIPLE_PAIR    = 4
+    STRAIGHT       = 5
+    CONSEC_PAIRS   = 6
+    BOMB           = 7
+    CONSEC_TRIPLES = 8
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,8 @@ class Move:
             return f"straight-{n}"
         if t == CardType.CONSEC_PAIRS:
             return f"consec-pairs-{n}"
+        if t == CardType.CONSEC_TRIPLES:
+            return f"consec-triples-{n}"
         if t == CardType.BOMB:
             assert self.bomb_key
             level = self.bomb_key[0]
@@ -185,46 +188,34 @@ def _make_bomb(cards: tuple[Card, ...]) -> Move:
 # ---------------------------------------------------------------------------
 
 def _is_valid_straight(cards: list[Card]) -> bool:
-    """5+ consecutive ranks; no jokers; A can be low or high; 2 cannot be high end."""
+    """5+ consecutive ranks. A: 常主牌(after K) or 数字1(before 2). 2: only 数字2(before 3)."""
     n = len(cards)
     if n < 5:
         return False
     if any(c.is_joker() for c in cards):
         return False
-    # Treat red tens as 10 in straights
-    ranks_high = sorted([c.straight_rank(ace_low=False) for c in cards])
-    ranks_low  = sorted([c.straight_rank(ace_low=True)  for c in cards])
+
+    has_A = any(c.rank == Rank.ACE for c in cards)
+    has_2 = any(c.rank == Rank.TWO for c in cards)
 
     def is_consec(rs: list[int]) -> bool:
-        if 0 in rs:  # ace_low gave us a 0 — check as A=low
-            non_zero = [r for r in rs if r != 0]
-            if not non_zero:
-                return False
-            # A-2-3-4-5 not valid (2 can't appear); A is rank 0, 3=1?, need to re-examine
-            # Actually 2 cannot be in straights at all
-            if any(c.rank == Rank.TWO for c in cards):
-                return False
-            return rs == list(range(min(rs), min(rs) + n))
         return rs == list(range(rs[0], rs[0] + n))
 
-    # 2 cannot be the high end
-    if any(c.rank == Rank.TWO for c in cards):
-        return False
-    if any(c.is_joker() for c in cards):
-        return False
+    if has_2:
+        # 2 must be 数字2. A (if present) must be 数字1 before 2.
+        ranks_low = sorted([c.straight_rank(ace_low=True) for c in cards])
+        return is_consec(ranks_low)
 
-    return is_consec(ranks_high) or is_consec(ranks_low)
+    # No 2: try A as 常主牌 (ace_low=False)
+    ranks_high = sorted([c.straight_rank(ace_low=False) for c in cards])
+    return is_consec(ranks_high)
 
 
 def _straight_lead_rank(cards: list[Card]) -> int:
     """Return the rank of the lowest card in the straight (for comparison)."""
-    if any(c.rank == Rank.ACE for c in cards):
-        # Could be A-low straight — use minimum straight_rank(ace_low=True)
-        ranks_low = sorted([c.straight_rank(ace_low=True) for c in cards])
-        ranks_high = sorted([c.straight_rank(ace_low=False) for c in cards])
-        if ranks_low == list(range(ranks_low[0], ranks_low[0] + len(cards))):
-            return ranks_low[0]
-        return ranks_high[0]
+    has_2 = any(c.rank == Rank.TWO for c in cards)
+    if has_2:
+        return min(c.straight_rank(ace_low=True) for c in cards)
     return min(c.straight_rank(ace_low=False) for c in cards)
 
 
@@ -242,24 +233,74 @@ def _is_valid_consec_pairs(cards: list[Card]) -> bool:
     cnt = Counter(c.rank for c in cards)
     if any(v != 2 for v in cnt.values()):
         return False
-    ranks_sorted = sorted(cnt.keys(), key=lambda r: Card(Suit.CLUBS, r).straight_rank(ace_low=False))
-    # Must be strictly consecutive (no gaps)
+
+    has_A = Rank.ACE in cnt
+    has_2 = Rank.TWO in cnt
+
+    if has_2:
+        # 2 must be 数字2. A (if present) must be 数字1.
+        mapper = lambda r: Card(Suit.CLUBS, r).consec_pair_rank_low()
+    else:
+        # No 2: A (if present) must be 常主牌 (after K).
+        mapper = lambda r: Card(Suit.CLUBS, r).consec_pair_rank_high()
+
+    ranks_sorted = sorted(cnt.keys(), key=mapper)
     for i in range(1, len(ranks_sorted)):
-        prev_r = Card(Suit.CLUBS, ranks_sorted[i-1]).straight_rank(ace_low=False)
-        curr_r = Card(Suit.CLUBS, ranks_sorted[i]).straight_rank(ace_low=False)
+        prev_r = mapper(ranks_sorted[i-1])
+        curr_r = mapper(ranks_sorted[i])
         if curr_r - prev_r != 1:
             return False
-    # 2 cannot be part of consecutive pairs
-    if Rank.TWO in cnt:
-        return False
     return True
 
 
 def _consec_pairs_lead_rank(cards: list[Card]) -> int:
     from collections import Counter
     cnt = Counter(c.rank for c in cards)
-    ranks = sorted(cnt.keys(), key=lambda r: Card(Suit.CLUBS, r).straight_rank(ace_low=False))
-    return Card(Suit.CLUBS, ranks[0]).straight_rank(ace_low=False)
+    has_2 = Rank.TWO in cnt
+    mapper = (lambda r: Card(Suit.CLUBS, r).consec_pair_rank_low()) if has_2 else \
+             (lambda r: Card(Suit.CLUBS, r).consec_pair_rank_high())
+    ranks = sorted(cnt.keys(), key=mapper)
+    return mapper(ranks[0])
+
+
+# ---------------------------------------------------------------------------
+# Consecutive triples helpers
+# ---------------------------------------------------------------------------
+
+def _is_valid_consec_triples(cards: list[Card]) -> bool:
+    n = len(cards)
+    if n < 6 or n % 3 != 0:
+        return False
+    if any(c.is_joker() or c.is_red_ten() for c in cards):
+        return False
+    from collections import Counter
+    cnt = Counter(c.rank for c in cards)
+    if any(v != 3 for v in cnt.values()):
+        return False
+
+    has_A = Rank.ACE in cnt
+    has_2 = Rank.TWO in cnt
+
+    if has_2:
+        mapper = lambda r: Card(Suit.CLUBS, r).consec_pair_rank_low()
+    else:
+        mapper = lambda r: Card(Suit.CLUBS, r).consec_pair_rank_high()
+
+    ranks_sorted = sorted(cnt.keys(), key=mapper)
+    for i in range(1, len(ranks_sorted)):
+        if mapper(ranks_sorted[i]) - mapper(ranks_sorted[i-1]) != 1:
+            return False
+    return True
+
+
+def _consec_triples_lead_rank(cards: list[Card]) -> int:
+    from collections import Counter
+    cnt = Counter(c.rank for c in cards)
+    has_2 = Rank.TWO in cnt
+    mapper = (lambda r: Card(Suit.CLUBS, r).consec_pair_rank_low()) if has_2 else \
+             (lambda r: Card(Suit.CLUBS, r).consec_pair_rank_high())
+    ranks = sorted(cnt.keys(), key=mapper)
+    return mapper(ranks[0])
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +331,11 @@ def identify_move(cards: list[Card]) -> Optional[Move]:
             return Move(CardType.TRIPLE, t, cards[0].single_rank())
         return None
 
+    if n == 4:
+        if _is_valid_consec_pairs(list(cards)):
+            return Move(CardType.CONSEC_PAIRS, t, _consec_pairs_lead_rank(list(cards)))
+        return None
+
     if n == 5:
         # Could be triple+pair or straight or consec-pairs (4 cards minimum but 5 is valid)
         from collections import Counter
@@ -308,11 +354,18 @@ def identify_move(cards: list[Card]) -> Optional[Move]:
             return Move(CardType.CONSEC_PAIRS, t, _consec_pairs_lead_rank(list(cards)))
         return None
 
+    if n == 6:
+        if _is_valid_consec_triples(list(cards)):
+            return Move(CardType.CONSEC_TRIPLES, t, _consec_triples_lead_rank(list(cards)))
+
     if n >= 5:
         if _is_valid_straight(list(cards)):
             return Move(CardType.STRAIGHT, t, _straight_lead_rank(list(cards)))
         if _is_valid_consec_pairs(list(cards)):
             return Move(CardType.CONSEC_PAIRS, t, _consec_pairs_lead_rank(list(cards)))
+        if n >= 6 and n % 3 == 0:
+            if _is_valid_consec_triples(list(cards)):
+                return Move(CardType.CONSEC_TRIPLES, t, _consec_triples_lead_rank(list(cards)))
     return None
 
 
@@ -356,6 +409,9 @@ def get_legal_moves(hand: list[Card], current_best: Optional[Move]) -> list[Move
 
     # Consecutive pairs
     _add_consec_pair_combos(hand, all_moves, current_best, leading)
+
+    # Consecutive triples
+    _add_consec_triple_combos(hand, all_moves, current_best, leading)
 
     # Bombs (always generated; filtered if following another bomb)
     _add_bomb_combos(hand, all_moves, current_best, leading)
@@ -436,70 +492,51 @@ def _add_triple_pair_combos(hand, out, current_best, leading):
 
 
 def _add_straight_combos(hand, out, current_best, leading):
-    """Generate all valid straights of length 5 or more."""
-    # Filter out jokers; red tens count as 10
-    eligible = [c for c in hand if not c.is_joker() and c.rank != Rank.TWO]
+    """Generate all valid straights (A-high or A-low, 5+ cards)."""
+    eligible = [c for c in hand if not c.is_joker()]
     if len(eligible) < 5:
         return
 
-    # Group by straight_rank (ace high)
     from collections import defaultdict
-    by_srank: dict[int, list[Card]] = defaultdict(list)
-    for c in eligible:
-        sr = c.straight_rank(ace_low=False)
-        by_srank[sr].append(c)
 
-    sranks = sorted(by_srank.keys())
-
-    def gen_straights_from(start_idx: int, length: int, min_len: int = 5):
-        # Find all consecutive runs starting at start_idx with given length
-        run = []
-        for i in range(length):
-            expected_rank = sranks[start_idx] + i
-            # find sranks[start_idx + i] == expected_rank
-            if start_idx + i >= len(sranks) or sranks[start_idx + i] != expected_rank:
-                return
-            run.append(sranks[start_idx + i])
-        # Generate all combos picking one card per rank
-        _gen_straight_combos_from_ranks(run, by_srank, out, current_best, leading)
-
-    # Try all windows of length 5..len(eligible)
-    max_len = len(eligible)
-    for start in range(len(sranks)):
-        for length in range(5, max_len + 1):
-            if start + length > len(sranks):
-                break
-            # Check if consecutive
-            consecutive = True
-            for i in range(1, length):
-                if sranks[start + i] != sranks[start] + i:
-                    consecutive = False
+    def gen_from_mapping(ace_low, eligible_cards):
+        """Generate straights using a specific ace_low interpretation."""
+        by_srank: dict[int, list[Card]] = defaultdict(list)
+        for c in eligible_cards:
+            sr = c.straight_rank(ace_low=ace_low)
+            if sr > 0 or (ace_low and sr >= 0):
+                by_srank[sr].append(c)
+        sranks = sorted(by_srank.keys())
+        max_len = len(sranks)
+        for start in range(len(sranks)):
+            for length in range(5, max_len + 1):
+                if start + length > len(sranks):
                     break
-            if not consecutive:
-                break
-            run = [sranks[start + i] for i in range(length)]
-            _gen_straight_combos_from_ranks(run, by_srank, out, current_best, leading)
+                run = sranks[start:start + length]
+                # Check consecutive
+                ok = all(run[i+1] == run[i] + 1 for i in range(len(run) - 1))
+                if not ok:
+                    if run[1] - run[0] != 1:
+                        break  # gap at the start, no point checking longer runs
+                    continue
+                lead_rank = run[0]
+                if not leading and current_best and current_best.type == CardType.STRAIGHT:
+                    if len(run) != len(current_best.cards):
+                        continue
+                    if lead_rank <= current_best.rank:
+                        continue
+                # Pick one card per rank
+                card_opts = [by_srank[r][:3] for r in run]
+                _cartesian_product_moves(card_opts, CardType.STRAIGHT, lead_rank,
+                                         out, current_best, leading)
 
-    # Also try ace-low straights (A-2-3-4-5 is invalid since 2 excluded; A-3-4-5-6 not valid)
-    # A-low: A=0 in straight_rank(ace_low=True); valid A-low straight = A,3,4,5,6? No.
-    # A-low means A=rank 0, so a valid straight must be A(0),2,3,4,5 but 2 is excluded.
-    # Actually looking at rules: "起始的牌最小是A，此时A相当于1" and example is A-2-3-4-5
-    # But 2 is explicitly excluded from straights. So A-low straights are NOT possible.
-    # Skip ace-low.
+    # A-high straights (no 2): 10JQKA, 34567, etc.
+    high_eligible = [c for c in eligible if c.rank != Rank.TWO]
+    gen_from_mapping(ace_low=False, eligible_cards=high_eligible)
 
-
-def _gen_straight_combos_from_ranks(run, by_srank, out, current_best, leading):
-    lead_rank = run[0]  # lowest rank in straight
-    if not leading and current_best and current_best.type == CardType.STRAIGHT:
-        if len(run) != len(current_best.cards):
-            return
-        if lead_rank <= current_best.rank:
-            return
-
-    # Pick one card per rank in the run — limit combinations to avoid explosion
-    # For large hands, this can be huge. We prune to first 3 cards per rank.
-    card_options = [by_srank[r][:3] for r in run]
-    _cartesian_product_moves(card_options, CardType.STRAIGHT, lead_rank, out, current_best, leading)
+    # A-low straights (with 2, A optional before 2): A2345, 23456, etc.
+    if any(c.rank == Rank.TWO for c in eligible):
+        gen_from_mapping(ace_low=True, eligible_cards=eligible)
 
 
 def _cartesian_product_moves(options, ctype, rank_val, out, current_best, leading, max_combos=200):
@@ -515,45 +552,99 @@ def _cartesian_product_moves(options, ctype, rank_val, out, current_best, leadin
 
 
 def _add_consec_pair_combos(hand, out, current_best, leading):
-    eligible = [c for c in hand if not c.is_joker() and not c.is_red_ten() and c.rank != Rank.TWO]
-    from collections import defaultdict
-    by_srank: dict[int, list[Card]] = defaultdict(list)
-    for c in eligible:
-        sr = c.straight_rank(ace_low=False)
-        by_srank[sr].append(c)
+    """Generate consecutive pair combos — both A-high (KKAA) and A-low (AA22)."""
+    eligible = [c for c in hand if not c.is_joker() and not c.is_red_ten()]
 
-    # Only ranks where we have >=2 cards
-    pair_sranks = sorted([sr for sr, cards in by_srank.items() if len(cards) >= 2])
-    if len(pair_sranks) < 2:
-        return
+    def gen_from_mapping(rank_fn, eligible_cards):
+        from collections import defaultdict
+        by_srank: dict[int, list[Card]] = defaultdict(list)
+        for c in eligible_cards:
+            sr = rank_fn(c)
+            if sr > 0:
+                by_srank[sr].append(c)
+        pair_sranks = sorted([sr for sr, cards in by_srank.items() if len(cards) >= 2])
+        if len(pair_sranks) < 2:
+            return
 
-    # Find consecutive windows of pair ranks
-    for start in range(len(pair_sranks)):
-        for length in range(2, len(pair_sranks) - start + 1):
-            run = pair_sranks[start:start + length]
-            # Check consecutive
-            consecutive = all(run[i+1] == run[i] + 1 for i in range(len(run) - 1))
-            if not consecutive:
-                break
-            lead_rank = run[0]
-            if not leading and current_best and current_best.type == CardType.CONSEC_PAIRS:
-                if len(run) * 2 != len(current_best.cards):
-                    continue
-                if lead_rank <= current_best.rank:
-                    continue
-            # Pick 2 cards per rank
-            options = [by_srank[r][:3] for r in run]
-            pair_options = [list(combinations(opts, 2)) for opts in options]
-            count = 0
-            from itertools import product as iproduct
-            for pair_combo in iproduct(*pair_options):
-                if count >= 100:
+        for start in range(len(pair_sranks)):
+            for length in range(2, len(pair_sranks) - start + 1):
+                run = pair_sranks[start:start + length]
+                if not all(run[i+1] == run[i] + 1 for i in range(len(run) - 1)):
                     break
-                cards = tuple(c for pair in pair_combo for c in pair)
-                m = Move(CardType.CONSEC_PAIRS, cards, lead_rank)
-                if leading or (current_best and m.beats(current_best)):
-                    out.append(m)
-                count += 1
+                lead_rank = run[0]
+                if not leading and current_best and current_best.type == CardType.CONSEC_PAIRS:
+                    if len(run) * 2 != len(current_best.cards):
+                        continue
+                    if lead_rank <= current_best.rank:
+                        continue
+                opts = [by_srank[r][:3] for r in run]
+                pair_opts = [list(combinations(opts_lst, 2)) for opts_lst in opts]
+                count = 0
+                from itertools import product as iproduct
+                for pair_combo in iproduct(*pair_opts):
+                    if count >= 100:
+                        break
+                    cards_tuple = tuple(c for pair in pair_combo for c in pair)
+                    m = Move(CardType.CONSEC_PAIRS, cards_tuple, lead_rank)
+                    if leading or (current_best and m.beats(current_best)):
+                        out.append(m)
+                    count += 1
+
+    # A-high (A=常主牌, no 2)
+    high_eligible = [c for c in eligible if c.rank != Rank.TWO]
+    gen_from_mapping(lambda c: c.consec_pair_rank_high(), high_eligible)
+
+    # A-low (2=数字2, A=数字1 if present)
+    if any(c.rank == Rank.TWO for c in eligible):
+        gen_from_mapping(lambda c: c.consec_pair_rank_low(), eligible)
+
+
+def _add_consec_triple_combos(hand, out, current_best, leading):
+    """Generate consecutive triple combos — both A-high (KKKAAA) and A-low (AAA222)."""
+    eligible = [c for c in hand if not c.is_joker() and not c.is_red_ten()]
+
+    def gen_from_mapping(rank_fn, eligible_cards):
+        from collections import defaultdict
+        by_srank: dict[int, list[Card]] = defaultdict(list)
+        for c in eligible_cards:
+            sr = rank_fn(c)
+            if sr > 0:
+                by_srank[sr].append(c)
+        triple_sranks = sorted([sr for sr, cards in by_srank.items() if len(cards) >= 3])
+        if len(triple_sranks) < 2:
+            return
+
+        for start in range(len(triple_sranks)):
+            for length in range(2, len(triple_sranks) - start + 1):
+                run = triple_sranks[start:start + length]
+                if not all(run[i+1] == run[i] + 1 for i in range(len(run) - 1)):
+                    break
+                lead_rank = run[0]
+                if not leading and current_best and current_best.type == CardType.CONSEC_TRIPLES:
+                    if len(run) * 3 != len(current_best.cards):
+                        continue
+                    if lead_rank <= current_best.rank:
+                        continue
+                opts = [by_srank[r][:5] for r in run]
+                triple_opts = [list(combinations(opts_lst, 3)) for opts_lst in opts]
+                count = 0
+                from itertools import product as iproduct
+                for triple_combo in iproduct(*triple_opts):
+                    if count >= 100:
+                        break
+                    cards_tuple = tuple(c for triple in triple_combo for c in triple)
+                    m = Move(CardType.CONSEC_TRIPLES, cards_tuple, lead_rank)
+                    if leading or (current_best and m.beats(current_best)):
+                        out.append(m)
+                    count += 1
+
+    # A-high (A=常主牌, no 2)
+    high_eligible = [c for c in eligible if c.rank != Rank.TWO]
+    gen_from_mapping(lambda c: c.consec_pair_rank_high(), high_eligible)
+
+    # A-low (2=数字2, A=数字1 if present)
+    if any(c.rank == Rank.TWO for c in eligible):
+        gen_from_mapping(lambda c: c.consec_pair_rank_low(), eligible)
 
 
 def _add_bomb_combos(hand, out, current_best, leading):
