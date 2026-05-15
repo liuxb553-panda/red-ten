@@ -39,7 +39,6 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 rooms = RoomManager()
 
-app.mount("/audio", StaticFiles(directory=os.path.join(WEB_DIR, "audio")), name="audio")
 app.mount("/src", StaticFiles(directory=os.path.join(WEB_DIR, "src")), name="src")
 
 
