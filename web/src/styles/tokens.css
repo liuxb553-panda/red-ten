@@ -1,1 +1,70 @@
-/* CSS custom properties — to be populated in Task 2 */
+:root {
+  /* 底色系统 */
+  --color-felt-deep:    #081208;
+  --color-felt-base:    #0c1a10;
+  --color-felt-raise:   #113d1a;
+  --color-felt-overlay: #165a23;
+
+  /* 阵营色 */
+  --color-red-team:     #dc4848;
+  --color-red-glow:     #ff6b6b;
+  --color-blue-team:    #589bdc;
+  --color-blue-glow:    #7cb8f5;
+
+  /* 强调色 */
+  --color-gold:         #ffe42d;
+  --color-gold-dim:     #b8a020;
+  --color-redten:       #ffd200;
+
+  /* 文字 */
+  --color-text-primary: #e1e4d7;
+  --color-text-dim:     #8a9a80;
+  --color-text-inverse: #0c1a10;
+
+  /* 牌面特殊色 */
+  --color-card-bg:      #f5f0e8;
+  --color-joker-purple: #7337c3;
+  --color-joker-light:  #cd96eb;
+  --color-suit-red:     #c0392b;
+  --color-suit-black:   #1a1a1a;
+
+  /* 间距系统 4px 基 */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  40px;
+  --space-2xl: 64px;
+
+  /* 阴影层级 */
+  --shadow-card:       0 2px 6px rgba(0,0,0,0.5);
+  --shadow-card-hover: 0 4px 14px rgba(0,0,0,0.6);
+  --shadow-panel:      0 0 20px rgba(0,0,0,0.4);
+  --shadow-overlay:    0 0 40px rgba(0,0,0,0.7);
+  --shadow-gold:       0 0 8px rgba(255,228,45,0.4);
+
+  /* 圆角 */
+  --radius-card:  4px;
+  --radius-btn:   6px;
+  --radius-panel: 8px;
+
+  /* 动效时长 */
+  --dur-fast:     150ms;
+  --dur-normal:   300ms;
+  --dur-slow:     500ms;
+  --dur-dramatic: 800ms;
+
+  /* 字体 */
+  --font-body:    "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-display: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  --font-mono:    "SF Mono", "Cascadia Code", monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast:     0ms;
+    --dur-normal:   0ms;
+    --dur-slow:     0ms;
+    --dur-dramatic: 0ms;
+  }
+}
