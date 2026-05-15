@@ -17,11 +17,11 @@ Routes:
     WS   /ws/{room}/{seat}      → live game WebSocket
 """
 from __future__ import annotations
-import sys, os, random, re, glob, asyncio, argparse
+import sys, os, random, re, glob, asyncio, argparse, json, threading, datetime
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agents"))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Body, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -40,23 +40,43 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 rooms = RoomManager()
 
 app.mount("/audio", StaticFiles(directory=os.path.join(WEB_DIR, "audio")), name="audio")
+app.mount("/src", StaticFiles(directory=os.path.join(WEB_DIR, "src")), name="src")
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _html(path: str) -> FileResponse:
+    return FileResponse(path, media_type="text/html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate",
+                                 "Pragma": "no-cache", "Expires": "0"})
 
 
 # ── Static pages ──────────────────────────────────────────────────────────────
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(WEB_DIR, "index.html"))
+    return _html(os.path.join(WEB_DIR, "index.html"))
 
 
 @app.get("/dashboard")
-def dashboard():
-    return FileResponse(os.path.join(WEB_DIR, "dashboard.html"))
+def dashboard_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/training")
 
 
 @app.get("/play")
 def play():
-    return FileResponse(os.path.join(WEB_DIR, "play.html"))
+    return _html(os.path.join(WEB_DIR, "play.html"))
+
+
+@app.get("/training")
+def training_page():
+    return _html(os.path.join(WEB_DIR, "training.html"))
+
+
+@app.get("/replay")
+def replay_page():
+    return _html(os.path.join(WEB_DIR, "replay.html"))
 
 
 # ── AI replay game ─────────────────────────────────────────────────────────────
@@ -178,6 +198,188 @@ def create_battle(req: BattleConfigReq):
 def get_tiers():
     from session import AVAILABLE_TIERS, AVAILABLE_PERSONALITIES
     return {"tiers": AVAILABLE_TIERS, "personalities": AVAILABLE_PERSONALITIES}
+
+
+# ── Training session management ──────────────────────────────────────────────
+
+TRAINING_DIR = os.path.join(DATA_DIR, "training")
+from typing import Any
+_trainers: dict[str, Any] = {}          # session_id → FixedDealTrainer
+_train_progress_clients: dict[str, list] = {}  # session_id → [(ws, loop), ...]
+
+
+@app.get("/api/training/sessions")
+def get_training_sessions():
+    """List all training sessions."""
+    sessions = []
+    if os.path.exists(TRAINING_DIR):
+        for name in sorted(os.listdir(TRAINING_DIR), reverse=True):
+            sdir = os.path.join(TRAINING_DIR, name)
+            meta_path = os.path.join(sdir, "meta.json")
+            if os.path.isdir(sdir) and os.path.exists(meta_path):
+                try:
+                    with open(meta_path, encoding="utf-8") as f:
+                        meta = json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    meta = {}
+                sessions.append({
+                    "id": name,
+                    "hands": meta.get("hands", 0),
+                    "reps": meta.get("reps", 0),
+                    "epsilon": meta.get("epsilon"),
+                    "n_samples": meta.get("n_samples", 0),
+                    "elapsed_s": meta.get("elapsed_s"),
+                    "benchmark_before": meta.get("benchmark_before"),
+                    "benchmark_after": meta.get("benchmark_after"),
+                })
+            elif os.path.isdir(sdir):
+                sessions.append({"id": name, "status": "no_meta"})
+    return sessions
+
+
+@app.get("/api/training/session/{session_id}")
+def get_training_session(session_id: str):
+    """Return session meta and hand list."""
+    sdir = os.path.join(TRAINING_DIR, session_id)
+    if not os.path.isdir(sdir):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    meta_path = os.path.join(sdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    hands_dir = os.path.join(sdir, "hands")
+    hands_list = []
+    if os.path.isdir(hands_dir):
+        for hname in sorted(os.listdir(hands_dir)):
+            hpath = os.path.join(hands_dir, hname)
+            if os.path.isdir(hpath):
+                rep_files = sorted(glob.glob(os.path.join(hpath, "*.jsonl")))
+                hands_list.append({
+                    "name": hname,
+                    "reps": [os.path.basename(r) for r in rep_files],
+                })
+
+    return {
+        "id": session_id,
+        "meta": meta,
+        "hands": hands_list,
+    }
+
+
+@app.get("/api/training/session/{session_id}/hand/{hid}/rep/{rid}")
+def get_training_rep(session_id: str, hid: str, rid: str):
+    """
+    Return events for a specific repetition.
+
+    File is expected at:
+      data/training/{session_id}/hands/{hid}/{rid}  (as a .jsonl file)
+    """
+    rep_dir = os.path.join(TRAINING_DIR, session_id, "hands", hid)
+    if not os.path.isdir(rep_dir):
+        raise HTTPException(status_code=404, detail="Hand not found")
+
+    # rid may or may not have .jsonl extension
+    file_path = os.path.join(rep_dir, rid if rid.endswith(".jsonl") else rid + ".jsonl")
+    if not os.path.exists(file_path):
+        # Also try plain name
+        alt_path = os.path.join(rep_dir, rid)
+        if os.path.exists(alt_path):
+            file_path = alt_path
+        else:
+            raise HTTPException(status_code=404, detail="Rep not found")
+
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            lines = [json.loads(ln) for ln in f if ln.strip()]
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read rep file")
+
+    return {"session_id": session_id, "hand": hid, "rep": rid, "events": lines}
+
+
+@app.post("/api/training/start")
+def start_training(req: dict = Body(default={})):
+    """Create a training session.  Training starts when client sends
+    `{\"type\":\"start\"}` via the training WebSocket."""
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = f"session_{ts}"
+    session_dir = os.path.join(TRAINING_DIR, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    def _progress(data: dict) -> None:
+        clients = _train_progress_clients.get(session_id, [])
+        for ws, loop in clients:
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_json(data), loop)
+            except Exception:
+                pass
+
+    from train_mlp_fixed import FixedDealTrainer
+    trainer = FixedDealTrainer(session_dir, progress_cb=_progress)
+
+    n_hands = int(req.get("hands", 100))
+    n_reps = int(req.get("reps", 30))
+    epsilon = float(req.get("epsilon", 0.2))
+    opponent = req.get("opponent", "search")
+    benchmark = not req.get("no_benchmark", False)
+
+    # Store config on the trainer so the WS handler can start it
+    trainer._config = {
+        "n_hands": n_hands, "n_reps": n_reps, "epsilon": epsilon,
+        "opponent": opponent, "benchmark": benchmark,
+    }
+    _trainers[session_id] = trainer
+
+    return {
+        "session_id": session_id,
+        "hands": n_hands, "reps": n_reps,
+        "epsilon": epsilon, "opponent": opponent,
+    }
+
+
+@app.websocket("/ws/training/{session_id}")
+async def ws_training(websocket: WebSocket, session_id: str):
+    """WebSocket for training progress — client sends `{\"type\":\"start\"}` to begin."""
+    await websocket.accept()
+
+    loop = asyncio.get_running_loop()
+    if session_id not in _train_progress_clients:
+        _train_progress_clients[session_id] = []
+    _train_progress_clients[session_id].append((websocket, loop))
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "start":
+                trainer = _trainers.get(session_id)
+                if trainer is not None:
+                    cfg = getattr(trainer, "_config", {})
+                    def _run():
+                        trainer.run(
+                            n_hands=cfg.get("n_hands", 100),
+                            n_reps=cfg.get("n_reps", 30),
+                            epsilon=cfg.get("epsilon", 0.2),
+                            opponent=cfg.get("opponent", "search"),
+                            benchmark=cfg.get("benchmark", True),
+                        )
+                    t = threading.Thread(target=_run, daemon=True)
+                    t.start()
+            elif data.get("type") == "abort":
+                trainer = _trainers.get(session_id)
+                if trainer is not None:
+                    trainer.abort()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        clients = _train_progress_clients.get(session_id, [])
+        _train_progress_clients[session_id] = [(w, l) for w, l in clients if w is not websocket]
 
 
 @app.websocket("/ws/{room_code}/spectate")
