@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="/src/styles/card.css">
 <link rel="stylesheet" href="/src/styles/table.css">
 <link rel="stylesheet" href="/src/styles/components.css">
+<link rel="stylesheet" href="/src/styles/texture.css">
+<link rel="stylesheet" href="/src/styles/animations.css">
 <script type="module">
 import { sound } from '/src/lib/sound.js';
 import { speech } from '/src/lib/speech.js';
@@ -61,7 +63,7 @@ window._speech = speech;
 
 <!-- ── Game ───────────────────────────────────────────────────────────────── -->
 <div id="game-screen" class="screen">
-  <div id="gmain">
+  <div id="gmain" class="game-table table-edge">
     <button id="mute-btn">🔊</button>
     <div id="gtrick-zone"></div>
     <div id="mogong-display"></div>

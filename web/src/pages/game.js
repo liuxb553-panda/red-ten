@@ -376,6 +376,36 @@ export function shakeScreen() {
   document.body.addEventListener('animationend', () => document.body.classList.remove('shake'), { once: true });
 }
 
+export function triggerBombAnimation(container) {
+  // Blast circle
+  const blast = document.createElement('div');
+  blast.className = 'bomb-blast';
+  container.appendChild(blast);
+
+  // 8 particle fragments
+  for (let i = 0; i < 8; i++) {
+    const p = document.createElement('div');
+    p.className = 'bomb-particle';
+    const angle = (Math.PI * 2 * i) / 8;
+    const dist = 40 + Math.random() * 30;
+    p.style.setProperty('--px', `${Math.cos(angle) * dist}px`);
+    p.style.setProperty('--py', `${Math.sin(angle) * dist}px`);
+    container.appendChild(p);
+  }
+
+  // White flash overlay
+  const flash = document.createElement('div');
+  flash.className = 'bomb-overlay';
+  container.appendChild(flash);
+
+  // Auto-cleanup after 500ms
+  setTimeout(() => {
+    blast.remove();
+    flash.remove();
+    container.querySelectorAll('.bomb-particle').forEach(el => el.remove());
+  }, 500);
+}
+
 export function showPassBadge(seat) {
   const seatEl = document.getElementById('gseat-' + seat);
   if (!seatEl) return;
@@ -489,7 +519,7 @@ export function handleEvent(ev) {
       showPassBadge(ev.player);
     } else if (ev.move.cards && ev.move.cards.length) {
       animateCardPlay(ev.player, ev.move.cards);
-      if (ev.move.bomb) { Sound.bomb(); shakeScreen(); } else Sound.card();
+      if (ev.move.bomb) { Sound.bomb(); shakeScreen(); triggerBombAnimation(document.getElementById('gmain')); } else Sound.card();
     }
   }
   if (ev.kind === 'trick_end') Sound.trickEnd();

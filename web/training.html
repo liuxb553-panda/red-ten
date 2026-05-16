@@ -6,6 +6,8 @@
 <title>AI 训练 — 红十</title>
 <link rel="stylesheet" href="/src/styles/tokens.css">
 <link rel="stylesheet" href="/src/styles/card.css">
+<link rel="stylesheet" href="/src/styles/texture.css">
+<link rel="stylesheet" href="/src/styles/animations.css">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: #165a23;
@@ -122,7 +124,7 @@ h2 { font-size: 16px; color: #ffe42d; margin-bottom: 12px; }
 <div class="container active" id="cont-spectate">
   <span class="back-link" onclick="location.href='/'">← 返回</span>
   <div id="spectate-layout">
-    <div id="spectate-main">
+    <div id="spectate-main" class="game-table table-edge">
       <div id="strick-zone"></div>
       <div class="pause-overlay" id="pause-indicator">⏸ PAUSED</div>
     </div>
