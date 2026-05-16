@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 训练 — 红十</title>
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/card.css">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #165a23;
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", "Microsoft YaHei", Arial, sans-serif;
+  color: #e1e4d7; }
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+#tab-bar {
+  display: flex; gap: 0; background: #0c2414; border-bottom: 2px solid #2d6e37;
+}
+.tab-btn {
+  flex: 1; padding: 12px 20px; font-size: 14px; font-weight: bold; text-align: center;
+  cursor: pointer; border: none; background: transparent; color: #829672;
+  transition: all 0.2s;
+}
+.tab-btn.active { color: #ffe42d; border-bottom: 3px solid #ffe42d; margin-bottom: -2px; }
+.tab-btn:hover { color: #c0c4b7; }
+
+/* ── Container screens ──────────────────────────────────────────────────── */
+.container { display: none; height: calc(100vh - 48px); overflow-y: auto; padding: 16px; }
+.container.active { display: block; }
+
+/* ── Spectator mode ─────────────────────────────────────────────────────── */
+#spectate-layout { display: flex; gap: 12px; height: 100%; }
+#spectate-main  { flex: 1; position: relative; background: #105a1a; border-radius: 8px;
+  overflow: hidden; min-height: 400px; }
+#spectate-panel { width: 260px; background: #0c2c14; border-radius: 8px; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+
+.config-box { background: #0c2c14; border: 1px solid #2d6e37; border-radius: 8px; padding: 16px; }
+
+.pause-overlay {
+  display: none; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%); z-index: 25; font-size: 28px; font-weight: bold;
+  color: #ffe42d; text-shadow: 2px 2px 4px rgba(0,0,0,0.7); pointer-events: none;
+  background: rgba(0,0,0,0.5); padding: 8px 24px; border-radius: 8px;
+}
+
+/* ── Seats ──────────────────────────────────────────────────────────────── */
+.seat { position: absolute; transform: translate(-50%,-50%);
+  background: #122a18; border: 2px solid #556; border-radius: 8px;
+  padding: 5px 7px 4px; min-width: 160px; }
+.seat.anchor-left  { transform: translate(0, -50%); }
+.seat.anchor-right { transform: translate(-100%, -50%); }
+.seat.leader { border-color: #ffe42d; }
+.seat.red    { border-color: #dc4848; }
+.seat.nonred { border-color: #589bdc; }
+.seat-name { font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 3px; }
+
+/* ── Trick zone (horizontal, like play.html) ─────────────────────────── */
+#strick-zone { position: absolute; transform: translate(-50%, -50%);
+  pointer-events: none; display: flex; flex-direction: row; flex-wrap: nowrap;
+  align-items: flex-end; justify-content: center; gap: 8px; z-index: 15; }
+.trick-play { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.trick-play-label { font-size: 10px; color: #829672; background: #122a18;
+  border: 1px solid #2a4a34; border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+.trick-play.best > .trick-play-label { color: #ffe42d; border-color: #ffe42d; }
+.trick-play.pass > .trick-play-label { font-style: italic; border-color: transparent;
+  background: transparent; }
+.trick-play-cards { display: flex; }
+.trick-play-cards .card { margin-left: -18px; }
+.trick-play-cards .card:first-child { margin-left: 0; }
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+.btn { background: #285a34; border: 1px solid #468850; border-radius: 6px;
+  color: #e1e4d7; font-size: 12px; padding: 6px 14px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: #3c7e48; }
+.btn.active { background: #58be64; color: #0c1a10; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.primary { background: #3a7e48; border-color: #ffe42d; color: #ffe42d; font-weight: bold; }
+.btn.primary:hover { background: #4a9e58; }
+
+.field { margin-bottom: 10px; }
+.field label { display: block; font-size: 11px; color: #829672; margin-bottom: 3px; }
+.field select, .field input { width: 100%; background: #162c1c; border: 1px solid #3a6a44;
+  border-radius: 5px; color: #e1e4d7; padding: 5px 8px; font-size: 12px; }
+
+/* ── Event log ──────────────────────────────────────────────────────────── */
+#evlog { flex: 1; overflow: hidden; font-size: 10px; font-family: monospace; line-height: 1.55; }
+#evlog .ev { color: #829672; }
+#evlog .ev.cur { color: #ffe42d; }
+
+/* ── Auto training ──────────────────────────────────────────────────────── */
+#train-config { max-width: 420px; }
+#progress-wrap { margin: 16px 0; }
+#progress-bar { height: 24px; background: #162c1c; border-radius: 12px; overflow: hidden;
+  border: 1px solid #2d6e37; }
+#progress-fill { height: 100%; background: linear-gradient(90deg, #2d8e3e, #58be64);
+  width: 0%; transition: width 0.3s; border-radius: 12px; }
+#status-line { font-size: 13px; margin: 8px 0; }
+
+#bench-result { margin-top: 16px; }
+.bench-row { display: flex; gap: 16px; }
+.bench-card { background: #0c2c14; border: 1px solid #2d6e37; border-radius: 8px;
+  padding: 12px 18px; text-align: center; min-width: 100px; }
+.bench-card .label { font-size: 10px; color: #829672; }
+.bench-card .value { font-size: 22px; font-weight: bold; color: #ffe42d; }
+
+/* ── Shared ──────────────────────────────────────────────────────────────── */
+h2 { font-size: 16px; color: #ffe42d; margin-bottom: 12px; }
+.back-link { font-size: 11px; color: #829672; cursor: pointer; display: inline-block; margin-bottom: 12px; }
+.back-link:hover { color: #ffe42d; }
+</style>
+</head>
+<body>
+
+<!-- Tab bar -->
+<div id="tab-bar">
+  <button class="tab-btn active" id="tab-spectate" onclick="switchTab('spectate')">👀 真人观战</button>
+  <button class="tab-btn"          id="tab-auto"    onclick="switchTab('auto')">🤖 自动训练</button>
+</div>
+
+<!-- Spectator container -->
+<div class="container active" id="cont-spectate">
+  <span class="back-link" onclick="location.href='/'">← 返回</span>
+  <div id="spectate-layout">
+    <div id="spectate-main">
+      <div id="strick-zone"></div>
+      <div class="pause-overlay" id="pause-indicator">⏸ PAUSED</div>
+    </div>
+    <div id="spectate-panel">
+      <h2>AI 观战</h2>
+      <div class="config-box" id="spectate-config">
+        <div class="field">
+          <label>速度</label>
+          <select id="sel-speed">
+            <option value="normal">Normal (1-3s)</option>
+            <option value="fast" selected>Fast (0.3-0.5s)</option>
+            <option value="instant">Instant</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>局数</label>
+          <input id="inp-hands" type="number" min="1" max="20" value="6">
+        </div>
+        <div id="seat-configs">
+          <!-- Filled by JS from /api/tiers -->
+        </div>
+        <button class="btn primary" onclick="startBattle()" id="btn-battle" style="width:100%;margin-top:8px;">▶ 开始观战</button>
+      </div>
+      <div id="evlog-label" style="font-size:10px;color:#829672;margin-top:8px;">Event log</div>
+      <div id="evlog"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Auto training container -->
+<div class="container" id="cont-auto">
+  <span class="back-link" onclick="location.href='/'">← 返回</span>
+  <div class="config-box" id="train-config">
+    <h2>自动训练</h2>
+    <div class="field">
+      <label>手牌数</label>
+      <input id="tr-hands" type="number" min="1" max="1000" value="100">
+    </div>
+    <div class="field">
+      <label>每手重复次数</label>
+      <input id="tr-reps" type="number" min="1" max="100" value="30">
+    </div>
+    <div class="field">
+      <label>探索率 ε</label>
+      <input id="tr-epsilon" type="number" min="0" max="1" step="0.05" value="0.2">
+    </div>
+    <div class="field">
+      <label>对手类型</label>
+      <select id="tr-opponent">
+        <option value="search">Search AI (推荐)</option>
+        <option value="rule">Rule-Based</option>
+      </select>
+    </div>
+    <div class="field" style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" id="tr-benchmark" checked>
+      <label for="tr-benchmark" style="display:inline;">训练前后运行 Benchmark</label>
+    </div>
+    <button class="btn primary" onclick="startTraining()" id="btn-train-start" style="width:100%;margin-top:8px;">
+      ▶ 开始训练
+    </button>
+    <button class="btn" onclick="abortTraining()" id="btn-train-abort" style="width:100%;margin-top:4px;display:none;">
+      ⏹ 中止训练
+    </button>
+  </div>
+
+  <div id="train-progress" style="display:none; max-width: 420px; margin-top: 16px;">
+    <h2>训练进度</h2>
+    <div id="progress-wrap">
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+    <div id="status-line">准备中…</div>
+    <div id="sub-status" style="font-size:11px; color:#829672;"></div>
+  </div>
+
+  <div id="bench-result"></div>
+</div>
+
+<script type="module">
+import { cardHtml as _cardHtml, backCardHtml as _backCardHtml } from '/src/lib/card.js';
+window._cardHtml = _cardHtml;
+window._backCardHtml = _backCardHtml;
+</script>
+
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────
+let currentTab = 'spectate';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-spectate').classList.toggle('active', tab === 'spectate');
+  document.getElementById('tab-auto').classList.toggle('active', tab === 'auto');
+  document.getElementById('cont-spectate').classList.toggle('active', tab === 'spectate');
+  document.getElementById('cont-auto').classList.toggle('active', tab === 'auto');
+}
+
+// ── Load tier/personality config ───────────────────────────────────────────
+async function loadTiers() {
+  const res = await fetch('/api/tiers');
+  const data = await res.json();
+  const el = document.getElementById('seat-configs');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    html += `<div class="field">
+      <label>座位 P${i}</label>
+      <select id="seat-${i}-tier" onchange="onTierChange(${i})">
+        ${data.tiers.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+      </select>
+      <select id="seat-${i}-pers" style="margin-top:4px;display:none;">
+        ${(data.personalities || []).map(p => `<option value="${p.value}">${p.label}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+  el.innerHTML = html;
+  // Default: all multi-agent
+  for (let i = 0; i < 6; i++) {
+    document.getElementById(`seat-${i}-tier`).value = 'multi-agent';
+    onTierChange(i);
+  }
+}
+
+function onTierChange(i) {
+  const tier = document.getElementById(`seat-${i}-tier`).value;
+  const pers = document.getElementById(`seat-${i}-pers`);
+  pers.style.display = tier === 'multi-agent' ? 'block' : 'none';
+}
+
+loadTiers();
+
+// ── Spectator mode ─────────────────────────────────────────────────────────
+let spectatorWs = null;
+let spectatePaused = false;
+let specBuffer = [];
+let gameStarted = false;
+let evLogSpec = [];
+
+function startBattle() {
+  const seats = [];
+  for (let i = 0; i < 6; i++) {
+    const tier = document.getElementById(`seat-${i}-tier`).value;
+    const pers = document.getElementById(`seat-${i}-pers`);
+    seats.push({ tier, personality: pers.style.display !== 'none' ? pers.value : null });
+  }
+  const speed = document.getElementById('sel-speed').value;
+  const numHands = parseInt(document.getElementById('inp-hands').value) || 6;
+  document.getElementById('btn-battle').disabled = true;
+  document.getElementById('btn-battle').textContent = '创建房间中…';
+
+  fetch('/api/battle/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seats, speed, num_hands: numHands }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const code = data.room_code;
+    document.getElementById('btn-battle').textContent = `房间 ${code} — 观战中`;
+    connectSpectator(code);
+  })
+  .catch(e => {
+    document.getElementById('btn-battle').disabled = false;
+    document.getElementById('btn-battle').textContent = '▶ 开始观战';
+    console.error(e);
+  });
+}
+
+function connectSpectator(code) {
+  const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${code}/spectate`;
+  spectatorWs = new WebSocket(wsUrl);
+
+  spectatorWs.onopen = () => {
+    // Send start_game to actually begin the match
+    const numHands = parseInt(document.getElementById('inp-hands').value) || 6;
+    spectatorWs.send(JSON.stringify({ type: 'start_game', hands: numHands }));
+  };
+
+  spectatorWs.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (spectatePaused && msg.type === 'game_event') {
+      specBuffer.push(msg);
+      return;
+    }
+    handleSpecMsg(msg);
+  };
+
+  spectatorWs.onclose = () => {
+    gameStarted = false;
+    evLogSpec = [];
+    specBuffer = [];
+    document.getElementById('btn-battle').disabled = false;
+    document.getElementById('btn-battle').textContent = '▶ 开始观战';
+    spectatorWs = null;
+  };
+}
+
+function handleSpecMsg(msg) {
+  switch (msg.type) {
+    case 'room_state':
+      gameStarted = msg.status === 'running';
+      break;
+    case 'game_started':
+      gameStarted = true;
+      initSpecGame();
+      break;
+    case 'game_event':
+      if (gameStarted) {
+        evLogSpec.push(msg.event.desc);
+        if (evLogSpec.length > 60) evLogSpec.shift();
+        renderSpecGame(msg.event);
+        updateEvLog();
+      }
+      break;
+    case 'game_over':
+      gameStarted = false;
+      showBenchmarkLink();
+      break;
+    case 'catch_up':
+      if (msg.events) {
+        msg.events.forEach(ev => {
+          evLogSpec.push(ev.desc);
+          if (evLogSpec.length > 60) evLogSpec.shift();
+          renderSpecGame(ev);
+        });
+        updateEvLog();
+      }
+      break;
+  }
+}
+
+function initSpecGame() {
+  // Build seats
+  const main = document.getElementById('spectate-main');
+  for (let p = 0; p < 6; p++) {
+    if (!document.getElementById('sseat-' + p)) {
+      const seat = document.createElement('div');
+      seat.className = 'seat';
+      seat.id = 'sseat-' + p;
+      seat.innerHTML = `<div class="seat-name" id="sname-${p}">P${p}</div>
+        <div id="shand-${p}" style="display:flex;flex-wrap:nowrap;min-height:52px;align-items:flex-end;"></div>`;
+      main.appendChild(seat);
+    }
+  }
+  positionSpecSeats();
+}
+
+function renderSpecGame(ev) {
+  if (!ev.snap) return;
+  const snap = ev.snap;
+  for (let p = 0; p < 6; p++) {
+    const el = document.getElementById('shand-' + p);
+    if (el && snap.hands[p]) {
+      const cards = snap.hands[p];
+      let overlap = -18;
+      if (cards.length > 1) {
+        const vis = Math.max(5, (220 - 36) / (cards.length - 1));
+        overlap = Math.min(-6, -(36 - vis));
+      }
+      el.innerHTML = cards.map(c => window._cardHtml?.(c) || '').join('');
+      el.style.setProperty('--cml', overlap + 'px');
+    }
+
+    // Seat team colors
+    const seat = document.getElementById('sseat-' + p);
+    if (seat) {
+      const team = snap.hands[p] ? (snap.hands[p].some(c => c.rt) ? 'RED' : 'NON_RED') : null;
+      seat.classList.remove('red', 'nonred', 'leader');
+      if (team === 'RED') seat.classList.add('red');
+      else if (team === 'NON_RED') seat.classList.add('nonred');
+    }
+  }
+
+  // Trick zone — horizontal layout like play.html
+  const tzEl = document.getElementById('strick-zone');
+  tzEl.innerHTML = '';
+  if (snap.tp) {
+    const bestIdx = snap.tp.reduce((bi, [, m], i) => m && !m.pass ? i : bi, -1);
+    snap.tp.forEach(([p, move], i) => {
+      const isPass = !move || move.pass;
+      const isBest = i === bestIdx;
+      const playDiv = document.createElement('div');
+      playDiv.className = 'trick-play' + (isBest ? ' best' : '') + (isPass ? ' pass' : '');
+      const label = document.createElement('div');
+      label.className = 'trick-play-label';
+      label.textContent = 'P' + p + (isPass ? ' pass' : '');
+      playDiv.appendChild(label);
+      if (!isPass) {
+        const cardsDiv = document.createElement('div');
+        cardsDiv.className = 'trick-play-cards';
+        cardsDiv.innerHTML = move.cards.map(c => window._cardHtml?.(c) || '').join('');
+        if (p === snap.tw) {
+          cardsDiv.querySelectorAll('.card').forEach(c => c.style.outline = '2px solid #ffaf00');
+        }
+        playDiv.appendChild(cardsDiv);
+      }
+      tzEl.appendChild(playDiv);
+    });
+  }
+}
+
+function updateEvLog() {
+  const el = document.getElementById('evlog');
+  if (el) el.innerHTML = evLogSpec.map((d, i) =>
+    `<div class="ev${i === evLogSpec.length - 1 ? ' cur' : ''}">${d}</div>`).join('');
+}
+
+function positionSpecSeats() {
+  const main = document.getElementById('spectate-main');
+  if (!main) return;
+  const pos = [[0.50,0.88],[0.02,0.72],[0.02,0.35],[0.50,0.09],[0.98,0.35],[0.98,0.72]];
+  for (let p = 0; p < 6; p++) {
+    const seat = document.getElementById('sseat-' + p);
+    if (seat) {
+      seat.style.left = (pos[p][0] * 100) + '%';
+      seat.style.top = (pos[p][1] * 100) + '%';
+      seat.classList.remove('anchor-left', 'anchor-right');
+      if (p === 1 || p === 2) seat.classList.add('anchor-left');
+      if (p === 4 || p === 5) seat.classList.add('anchor-right');
+    }
+  }
+  // Center trick zone
+  const tz = document.getElementById('strick-zone');
+  const W = main.clientWidth, H = main.clientHeight;
+  if (tz) { tz.style.left = (W * 0.5) + 'px'; tz.style.top = (H * 0.5) + 'px'; }
+}
+
+function positionSpec() {
+  positionSpecSeats();
+}
+
+window.addEventListener('resize', positionSpec);
+
+// Spacebar pause for spectator
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && currentTab === 'spectate' && gameStarted) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    spectatePaused = !spectatePaused;
+    document.getElementById('pause-indicator').style.display = spectatePaused ? 'block' : 'none';
+    if (!spectatePaused && specBuffer.length > 0) {
+      const buf = specBuffer;
+      specBuffer = [];
+      buf.forEach(m => handleSpecMsg(m));
+    }
+  }
+});
+
+// ── Auto training ──────────────────────────────────────────────────────────
+let trainWs = null;
+let trainSessionId = null;
+let trainingActive = false;
+
+function startTraining() {
+  const config = {
+    hands: parseInt(document.getElementById('tr-hands').value) || 100,
+    reps: parseInt(document.getElementById('tr-reps').value) || 30,
+    epsilon: parseFloat(document.getElementById('tr-epsilon').value) || 0.2,
+    opponent: document.getElementById('tr-opponent').value,
+    no_benchmark: !document.getElementById('tr-benchmark').checked,
+  };
+
+  document.getElementById('btn-train-start').disabled = true;
+  document.getElementById('btn-train-start').textContent = '创建会话…';
+  document.getElementById('train-progress').style.display = 'block';
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('status-line').textContent = '创建训练会话…';
+  document.getElementById('sub-status').textContent = '';
+
+  // Step 1: Create session
+  fetch('/api/training/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  .then(r => r.json())
+  .then(data => {
+    trainSessionId = data.session_id;
+    trainingActive = true;
+    document.getElementById('btn-train-start').textContent = '训练中…';
+    document.getElementById('btn-train-abort').style.display = 'block';
+    document.getElementById('bench-result').innerHTML = '';
+    document.getElementById('status-line').textContent = '连接训练管道…';
+
+    // Step 2: Connect WebSocket, then send start
+    connectTrainingWs(data.session_id, config);
+  })
+  .catch(e => {
+    document.getElementById('btn-train-start').disabled = false;
+    document.getElementById('btn-train-start').textContent = '▶ 开始训练';
+    document.getElementById('status-line').textContent = '创建失败: ' + e.message;
+  });
+}
+
+function connectTrainingWs(sessionId, config) {
+  const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/training/${sessionId}`;
+  trainWs = new WebSocket(wsUrl);
+
+  trainWs.onopen = () => {
+    document.getElementById('status-line').textContent = '训练启动中…';
+    // Now that WS is connected, trigger training start
+    trainWs.send(JSON.stringify({
+      type: 'start',
+      hands: config.hands,
+      reps: config.reps,
+      epsilon: config.epsilon,
+      opponent: config.opponent,
+      no_benchmark: config.no_benchmark,
+    }));
+  };
+
+  trainWs.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleTrainMsg(msg);
+  };
+
+  trainWs.onclose = () => { trainWs = null; };
+  trainWs.onerror = () => {
+    document.getElementById('status-line').textContent = '连接错误 — 训练可能仍在后台运行';
+  };
+}
+
+function handleTrainMsg(msg) {
+  switch (msg.type) {
+    case 'train_progress':
+      if (msg.hand) {
+        const pct = (msg.hand / msg.total_hands * 100).toFixed(1);
+        document.getElementById('progress-fill').style.width = pct + '%';
+        document.getElementById('status-line').textContent =
+          `手牌 ${msg.hand} / ${msg.total_hands}  (${pct}%)`;
+        document.getElementById('sub-status').textContent =
+          `每手 ${msg.reps_done || '?'} 次重复`;
+      }
+      if (msg.phase === 'mlp_training') {
+        document.getElementById('status-line').textContent =
+          `训练 MLP — Epoch ${msg.epoch}/${msg.epochs}  (loss: ${msg.val_loss})`;
+        document.getElementById('progress-fill').style.width = '100%';
+      }
+      break;
+    case 'benchmark_progress':
+      document.getElementById('status-line').textContent =
+        `Benchmark: ${msg.done} / ${msg.total} 局`;
+      document.getElementById('progress-fill').style.width = (msg.done / msg.total * 100).toFixed(1) + '%';
+      break;
+    case 'samples_saved':
+      document.getElementById('sub-status').textContent =
+        `已收集 ${msg.n_samples.toLocaleString()} 个训练样本`;
+      break;
+    case 'train_phase':
+      document.getElementById('status-line').textContent =
+        `阶段: ${msg.phase.replace(/_/g, ' ')}`;
+      if (msg.phase === 'benchmark_before' || msg.phase === 'benchmark_after') {
+        document.getElementById('progress-fill').style.width = '0%';
+      }
+      break;
+    case 'benchmark_result':
+      showBenchmarkCard(msg);
+      break;
+    case 'train_complete':
+      trainingActive = false;
+      document.getElementById('progress-fill').style.width = '100%';
+      document.getElementById('progress-fill').style.background = 'linear-gradient(90deg, #58be64, #ffe42d)';
+      document.getElementById('status-line').textContent =
+        `✅ 训练完成！用时 ${Math.round(msg.elapsed_s / 60)} 分钟`;
+      document.getElementById('btn-train-start').disabled = false;
+      document.getElementById('btn-train-start').textContent = '▶ 重新训练';
+      document.getElementById('btn-train-abort').style.display = 'none';
+      if (trainWs) { trainWs.close(); trainWs = null; }
+      break;
+    case 'train_aborted':
+      trainingActive = false;
+      document.getElementById('status-line').textContent = '⚠ 训练已中止';
+      document.getElementById('btn-train-start').disabled = false;
+      document.getElementById('btn-train-start').textContent = '▶ 开始训练';
+      document.getElementById('btn-train-abort').style.display = 'none';
+      if (trainWs) { trainWs.close(); trainWs = null; }
+      break;
+  }
+}
+
+function abortTraining() {
+  if (trainWs) {
+    try { trainWs.send(JSON.stringify({ type: 'abort' })); } catch(e) {}
+    trainWs.close();
+    trainWs = null;
+  }
+  trainingActive = false;
+  document.getElementById('status-line').textContent = '中止请求已发送…';
+}
+
+function showBenchmarkCard(msg) {
+  const el = document.getElementById('bench-result');
+  const bb = msg.stage === 'before' ? msg : null;
+  const ba = msg.stage === 'after' ? msg : null;
+  if (msg.benchmark_before) {
+    const b = msg.benchmark_before;
+    el.innerHTML += `<div class="bench-row">
+      <div class="bench-card"><div class="label">训练前胜率</div><div class="value">${b.win_pct}%</div></div>
+      <div class="bench-card"><div class="label">W / L / T</div><div class="value" style="font-size:14px">${b.wins}/${b.losses}/${b.ties}</div></div>
+    </div>`;
+  }
+  if (msg.benchmark_after) {
+    const b = msg.benchmark_after;
+    el.innerHTML += `<div class="bench-row" style="margin-top:8px">
+      <div class="bench-card"><div class="label">训练后胜率</div><div class="value">${b.win_pct}%</div></div>
+      <div class="bench-card"><div class="label">W / L / T</div><div class="value" style="font-size:14px">${b.wins}/${b.losses}/${b.ties}</div></div>
+    </div>`;
+  }
+}
+
+function showBenchmarkLink() {
+  // Show a link to the replay if there are completed training sessions
+}
+</script>
+</body>
+</html>
