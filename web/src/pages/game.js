@@ -466,7 +466,7 @@ function renderMyHandStrip() {
     msg.textContent = 'Your turn — select cards';
     msg.style.color = '#ffe42d';
     const hasPass = myTurnMoves.some(m => m.is_pass);
-    document.getElementById('pass-btn').style.display = hasPass ? '' : 'none';
+    document.getElementById('pass-btn').style.display = hasPass ? 'inline-block' : 'none';
     updatePlayBtnState();
   }
 }

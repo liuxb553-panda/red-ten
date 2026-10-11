@@ -26,6 +26,16 @@
 
 **修复**: 新增 `/training`、`/replay` 两个页面路由。
 
+### 修复：轮到自己时看不到 "Pass" 按钮
+
+**文件**: `web/src/pages/game.js`
+
+**问题**: 轮到玩家出牌时 Pass 按钮始终不显示；当只能过牌时，玩家无法操作，牌局卡住。
+
+**原因**: 按钮的隐藏样式从行内样式移到了样式表 (`#pass-btn { display: none; }`)，而显示按钮的代码只是清空行内样式，按钮仍被样式表隐藏。
+
+**修复**: 显示按钮时明确设置 `display: inline-block`。
+
 ### 开发环境
 
 - 新增 `requirements.txt`（含 WebSocket 所需的 `websockets`）和 `AGENTS.md`（开发约定）。
