@@ -254,6 +254,38 @@ Manual verification: play a hand and confirm Red + Non-Red team scores sum to 30
 
 ---
 
+## Test Case 8: Pass button never appears on the human player's turn
+
+**Date**: 2026-10-11  
+**Reported by**: User  
+**Source files**: `web/src/pages/game.js`, `web/src/styles/table.css`
+
+### Bug Description
+
+On the human player's turn the Pass button was never shown, even when passing was
+legal. When pass was the only legal move the player had no way to act and the game
+stopped waiting for them.
+
+### Root Cause
+
+Commit `90b51f1` moved the button's inline `style="display:none"` into the stylesheet
+as `#pass-btn { display: none; }`. `renderMyHandStrip()` still showed the button by
+clearing the inline style (`style.display = ''`), which now falls back to the
+stylesheet rule and leaves it hidden.
+
+### Fix
+
+`renderMyHandStrip()` sets `style.display = 'inline-block'` when pass is legal.
+
+### Test Coverage
+
+`tests/test_web_static.py::test_pass_button_is_shown_with_an_explicit_display_value`
+reads the shipped CSS and JS and fails if the button is hidden by the stylesheet while
+the script only clears the inline style. It is a static check; the button itself needs
+checking in a browser.
+
+---
+
 ## Running Tests
 
 ```bash

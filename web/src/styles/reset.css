@@ -1,0 +1,7 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--color-felt-base);
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", "Microsoft YaHei", Arial, sans-serif;
+  color: var(--color-text-primary); }
+button { font-family: inherit; cursor: pointer; }
+input, select { font-family: inherit; }
+a { color: inherit; text-decoration: none; }

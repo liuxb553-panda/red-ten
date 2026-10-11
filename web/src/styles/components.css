@@ -1,0 +1,89 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   components.css — Lobby, room, buttons, inputs, overlays, connection badge
+   Extracted from play.html
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #165a23;
+  font-family: "Arial Unicode MS", "PingFang SC", "Heiti SC", Arial, sans-serif;
+  color: #e1e4d7; }
+
+/* ── Screen switching ─────────────────────────────────────────────────────── */
+.screen { display: none; height: 100vh; align-items: center; justify-content: center; }
+.screen.active { display: flex; }
+
+/* ── Lobby screen ─────────────────────────────────────────────────────────── */
+#lobby-box { background: #0c2c14; border: 2px solid #ffe42d; border-radius: 12px;
+  padding: 32px 40px; min-width: 320px; }
+#lobby-box h1 { font-size: 22px; color: #ffe42d; text-align: center; margin-bottom: 24px; }
+.lfield { margin-bottom: 16px; }
+.lfield label { display: block; font-size: 12px; color: #829672; margin-bottom: 4px; }
+.lfield input, .lfield select { width: 100%; background: #162c1c; border: 1px solid #3a6a44;
+  border-radius: 5px; color: #e1e4d7; padding: 7px 10px; font-size: 13px; }
+.lbtn { width: 100%; background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; margin-bottom: 10px; }
+.lbtn:hover { background: #3a7a48; }
+.lbtn.secondary { border-color: #3a6a44; color: #829672; font-size: 13px; padding: 8px; }
+.lbtn.secondary:hover { background: #1e4a28; color: #e1e4d7; }
+#lobby-err { color: #e06060; font-size: 12px; text-align: center; min-height: 18px; margin-top: 6px; }
+#join-row { display: flex; gap: 8px; margin-bottom: 4px; }
+#join-row input:focus { outline: 1px solid #ffe42d; }
+#join-code { flex: 1; background: #162c1c; border: 1px solid #3a6a44; border-radius: 5px;
+  color: #e1e4d7; padding: 6px 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; }
+#join-btn { background: #285a34; border: 1px solid #3a6a44; border-radius: 5px;
+  color: #e1e4d7; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+#join-btn:hover { background: #3a7a48; border-color: #ffe42d; }
+#room-list { min-height: 36px; margin-bottom: 8px; }
+.lobby-subtext { text-align: center; font-size: 11px; color: #829672; margin: 10px 0 6px; }
+.lobby-footer { margin-top: 16px; text-align: center; }
+.lobby-footer-link { color: #829672; font-size: 12px; }
+.lobby-footer-link:hover { color: #e1e4d7; }
+.room-row { display: flex; align-items: center; gap: 8px; background: #162c1c;
+  border: 1px solid #3a6a44; border-radius: 6px; padding: 7px 10px; margin-bottom: 6px; }
+.room-code-tag { font-family: monospace; font-size: 15px; font-weight: bold;
+  color: #ffe42d; letter-spacing: .1em; min-width: 44px; }
+.room-info { font-size: 11px; color: #829672; flex: 1; }
+.room-join-btn { background: #285a34; border: 1px solid #3a6a44; border-radius: 5px;
+  color: #e1e4d7; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.room-join-btn:hover { background: #3a7a48; border-color: #ffe42d; }
+.no-rooms { font-size: 11px; color: #829672; text-align: center; padding: 8px 0; }
+
+/* ── Room/waiting screen ──────────────────────────────────────────────────── */
+#room-box { background: #0c2c14; border: 2px solid #2d6e37; border-radius: 12px;
+  padding: 28px 36px; min-width: 360px; max-width: 480px; width: 90vw; }
+#room-box h2 { font-size: 16px; color: #e1e4d7; text-align: center; margin-bottom: 18px; }
+#room-code-display { font-size: 36px; font-weight: bold; color: #ffe42d;
+  text-align: center; letter-spacing: .2em; margin-bottom: 6px; }
+#room-share { font-size: 11px; color: #829672; text-align: center; margin-bottom: 18px; }
+#seat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+.seat-slot { background: #162c1c; border: 1px solid #3a6a44; border-radius: 6px;
+  padding: 10px 8px; text-align: center; cursor: pointer; transition: border-color .15s; }
+.seat-slot:hover { border-color: #ffe42d; }
+.seat-slot.mine { border-color: #ffe42d; background: #1e3c24; }
+.seat-slot.taken { border-color: #589bdc; background: #162c1c; cursor: default; }
+.seat-slot.ai { border-color: #3a6a44; color: #829672; }
+.seat-slot .slot-label { font-size: 11px; color: #829672; }
+.seat-slot .slot-status { font-size: 12px; margin-top: 3px; }
+#start-btn { width: 100%; background: #285a34; border: 1px solid #ffe42d; border-radius: 7px;
+  color: #ffe42d; font-size: 15px; padding: 10px; cursor: pointer; }
+#start-btn:hover { background: #3a7a48; }
+#start-btn:disabled { opacity: 0.4; cursor: default; }
+#room-status-msg { font-size: 12px; color: #829672; text-align: center; margin-top: 10px; }
+
+/* ── Connection badge ─────────────────────────────────────────────────────── */
+#conn-badge { position: fixed; top: 8px; right: 12px; font-size: 11px;
+  padding: 3px 8px; border-radius: 4px; background: #162c1c; z-index: 200; }
+#conn-badge.ok  { color: #4bc84b; border: 1px solid #4bc84b; }
+#conn-badge.off { color: #e06060; border: 1px solid #e06060; }
+
+/* ── Debug flag button (dev tool) ─────────────────────────────────────────── */
+#debug-btn { position: fixed; top: 8px; left: 12px; font-size: 10px;
+  padding: 3px 8px; border-radius: 4px; background: #162c1c;
+  border: 1px solid #3a6a44; color: #829672; cursor: pointer;
+  z-index: 200; display: none; }
+#debug-btn:hover { border-color: #829672; color: #e1e4d7; }
+#debug-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #0c2c14; border: 1px solid #3a6a44; border-radius: 6px;
+  color: #e1e4d7; font-size: 11px; font-family: monospace; white-space: pre-line;
+  padding: 8px 14px; z-index: 300; display: none; max-width: 80vw; text-align: center; }

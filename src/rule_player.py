@@ -70,7 +70,8 @@ class RuleBasedPlayer(Player):
 
         # Only bombs left — use the weakest one
         if bombs:
-            return max(bombs, key=lambda m: (m.bomb_key[0], -m.bomb_key[1]))
+            assert all(b.bomb_key is not None for b in bombs)
+            return max(bombs, key=lambda m: (m.bomb_key[0], -m.bomb_key[1]))  # type: ignore[index]
 
         return non_pass[0]
 
@@ -120,7 +121,7 @@ class RuleBasedPlayer(Player):
 
         # Don't burn a strong bomb on a modest trick
         if cheap.is_bomb():
-            level = cheap.bomb_key[0]
+            level = cheap.bomb_key[0]  # type: ignore[index]
             if level <= self._BOMB_RESERVE_LEVEL and trick_pts < 30:
                 return pass_move
             # Weak bomb is fine

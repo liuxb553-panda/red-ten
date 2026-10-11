@@ -2,10 +2,6 @@
 Unit test: When leading a new trick (after winning previous trick),
 all valid card combos should be available, including triples.
 """
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from cards import Card, Rank, Suit, _SINGLE_RANK_MAP
 from moves import Move, CardType, get_legal_moves
 

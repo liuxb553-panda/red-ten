@@ -224,7 +224,14 @@ class Hand:
         non  = self.state.non_red_team()
         terminal = self.state.terminal or TerminalKind.NORMAL
 
+        def team_of(p: int) -> Team:
+            t = self.state.player_statuses[p].team
+            assert t is not None, f"Player {p} team not assigned"
+            return t
+
         mg_hands = {p: list(self.state.hands[p]) for p in self.state.mo_gong}
+        all_hands = {p: list(self.state.hands[p]) for p in range(6)
+                     if not self.state.player_statuses[p].finished}
 
         base = {
             Team.RED:     sum(self.state.trick_scores[p] for p in red),
@@ -239,6 +246,7 @@ class Hand:
                               red_team=red, non_red_team=non,
                               da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
                               mo_gong_hands=mg_hands,
+                              all_remaining_hands=all_hands,
                               da_gong_mo_gong_same_team=True,
                               base_scores=base, final_team_scores=final_team, final_scores=final)
 
@@ -246,18 +254,19 @@ class Hand:
             winner_team = Team.RED if all(self.state.player_statuses[p].finished for p in red) else Team.NON_RED
             loser_team  = Team.NON_RED if winner_team == Team.RED else Team.RED
             final_team = {winner_team: 1000, loser_team: 0}
-            final = [final_team[self.state.player_statuses[p].team] for p in range(6)]
+            final = [final_team[team_of(p)] for p in range(6)]
             return HandResult(terminal=terminal, finish_order=self.state.finish_order,
                               red_team=red, non_red_team=non,
                               da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
                               mo_gong_hands=mg_hands,
+                              all_remaining_hands=all_hands,
                               da_gong_mo_gong_same_team=True,
                               base_scores=base, final_team_scores=final_team, final_scores=final)
 
         # Transfer scoring cards from unfinished players to opposing team
         for p in range(6):
             if not self.state.player_statuses[p].finished:
-                p_team = self.state.player_statuses[p].team
+                p_team = team_of(p)
                 opp = Team.NON_RED if p_team == Team.RED else Team.RED
                 for c in self.state.hands[p]:
                     if c.is_scoring():
@@ -266,8 +275,8 @@ class Hand:
         # Normal: ±60 adjustment
         same_team = True
         if self.state.da_gong is not None and self.state.mo_gong:
-            dg_team  = self.state.player_statuses[self.state.da_gong].team
-            mg_teams = {self.state.player_statuses[p].team for p in self.state.mo_gong}
+            dg_team  = team_of(self.state.da_gong)
+            mg_teams = {team_of(p) for p in self.state.mo_gong}
             if dg_team not in mg_teams:
                 same_team = False
                 other = Team.NON_RED if dg_team == Team.RED else Team.RED
@@ -282,11 +291,12 @@ class Hand:
             base[t] = min(base[t], 300)
 
         final_team = {Team.RED: base[Team.RED], Team.NON_RED: base[Team.NON_RED]}
-        final = [final_team[self.state.player_statuses[p].team] for p in range(6)]
+        final = [final_team[team_of(p)] for p in range(6)]
 
         return HandResult(terminal=terminal, finish_order=self.state.finish_order,
                           red_team=red, non_red_team=non,
                           da_gong=self.state.da_gong, mo_gong=self.state.mo_gong,
                           mo_gong_hands=mg_hands,
+                          all_remaining_hands=all_hands,
                           da_gong_mo_gong_same_team=same_team,
                           base_scores=base, final_team_scores=final_team, final_scores=final)

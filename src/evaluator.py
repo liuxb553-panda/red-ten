@@ -4,6 +4,12 @@ from cards import Card, Rank, Suit
 from moves import Move, CardType, get_legal_moves, _is_valid_bomb, _bomb_key
 
 
+def _bomb_sort_key(m: Move) -> tuple[int, int, int]:
+    """Sort key for bombs: (level, -count, -rank). Lower level = stronger."""
+    assert m.bomb_key is not None
+    return (m.bomb_key[0], -m.bomb_key[1], -m.bomb_key[2])
+
+
 def scoring_value(hand: list[Card]) -> int:
     """Total trick-point value of scoring cards in hand."""
     return sum(c.score_value() for c in hand)
@@ -30,7 +36,7 @@ def best_bomb(hand: list[Card]) -> Move | None:
     bombs = [m for m in moves if m.is_bomb()]
     if not bombs:
         return None
-    return min(bombs, key=lambda m: (m.bomb_key[0], -m.bomb_key[1], -m.bomb_key[2]))
+    return min(bombs, key=_bomb_sort_key)
 
 
 def cheapest_winning_move(hand: list[Card], current_best: Move) -> Move | None:
@@ -50,7 +56,7 @@ def cheapest_winning_move(hand: list[Card], current_best: Move) -> Move | None:
         return min(non_bombs, key=lambda m: (len(m.cards), m.rank))
 
     # Must use a bomb — pick the weakest
-    return max(candidates, key=lambda m: (m.bomb_key[0], -m.bomb_key[1], -m.bomb_key[2]))
+    return max(candidates, key=_bomb_sort_key)
 
 
 def hand_playability(hand: list[Card]) -> float:
@@ -103,7 +109,7 @@ def best_lead(hand: list[Card]) -> Move:
         # Only bombs or pass — pick weakest bomb
         bombs = [m for m in get_legal_moves(hand, None) if m.is_bomb()]
         if bombs:
-            return max(bombs, key=lambda m: (m.bomb_key[0], -m.bomb_key[1]))
+            return max(bombs, key=_bomb_sort_key)
         raise RuntimeError("No legal moves when leading")
 
     # Group by card count (prefer larger plays)

@@ -42,7 +42,7 @@ class RedTenMLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).squeeze(-1)
+        return self.net(x).squeeze(-1)  # type: ignore[no-any-return]
 
 
 def load_model(path: str = _DEFAULT_MODEL) -> RedTenMLP:

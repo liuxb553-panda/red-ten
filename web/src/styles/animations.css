@@ -1,0 +1,114 @@
+/* All @keyframes — consolidated animation library */
+
+@keyframes splashIn {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-8deg); }
+  100% { opacity: 1; transform: scale(1)   rotate(0deg);   }
+}
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── Fly card to trick zone ── */
+@keyframes fly-to-trick {
+  0%   { transform: translate(var(--from-x), var(--from-y)) scale(0.8); opacity: 0.5; }
+  60%  { transform: translate(calc(var(--to-x)*0.6), calc(var(--to-y)*0.6)) scale(1.05); opacity: 1; }
+  100% { transform: translate(var(--to-x), var(--to-y)) scale(1); opacity: 1; }
+}
+
+/* ── Screen shake on bomb ── */
+@keyframes screen-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-4px, 2px); }
+  30% { transform: translate(3px, -3px); }
+  50% { transform: translate(-2px, 4px); }
+  70% { transform: translate(4px, -1px); }
+  90% { transform: translate(-1px, 2px); }
+}
+
+/* ── Pass badge pop ── */
+@keyframes pass-badge-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.6; }
+}
+
+/* ── AI speech bubble pop ── */
+@keyframes bubble-pop {
+  0%   { transform: translateY(8px) scale(0.9); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* ── Event log slide in ── */
+@keyframes log-slide-in {
+  0%   { transform: translateX(20px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+/* ── Card breathe on hover ── */
+@keyframes card-breathe {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+/* ── Red ten golden pulse ── */
+@keyframes redten-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255,228,45,0.4); }
+  50%      { box-shadow: 0 0 16px rgba(255,228,45,0.8); }
+}
+
+/* ── Score bounce ── */
+@keyframes score-bounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.3); color: var(--color-gold); }
+  100% { transform: scale(1); }
+}
+
+/* ── Bomb explosion — blast circle ── */
+@keyframes bomb-explode {
+  0%   { transform: scale(0); opacity: 1; }
+  40%  { transform: scale(1.8); opacity: 0.9; }
+  100% { transform: scale(3); opacity: 0; }
+}
+
+/* ── Bomb explosion — flying particles ── */
+@keyframes bomb-particle {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--px), var(--py)) scale(0); opacity: 0; }
+}
+
+/* ── Bomb explosion — white flash overlay ── */
+@keyframes bomb-flash {
+  0%   { background: rgba(255,255,255,0.6); }
+  100% { background: transparent; }
+}
+
+/* ── Bomb explosion component classes ── */
+.bomb-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 50;
+  animation: bomb-flash var(--dur-fast) ease-out forwards;
+}
+
+.bomb-blast {
+  position: absolute; top: 50%; left: 50%; width: 60px; height: 60px;
+  margin-left: -30px; margin-top: -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-gold), rgba(255,100,0,0.6), transparent);
+  animation: bomb-explode var(--dur-slow) ease-out forwards;
+}
+
+.bomb-particle {
+  position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+  background: var(--color-gold);
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  animation: bomb-particle var(--dur-slow) ease-out forwards;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}

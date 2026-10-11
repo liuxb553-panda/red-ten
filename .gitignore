@@ -1,1 +1,6 @@
 __pycache__/
+node_modules/
+dist/
+.vite/
+.venv/
+debug_logs/llm/

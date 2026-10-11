@@ -74,13 +74,16 @@ def ser_result(r: Optional[HandResult]) -> Optional[dict]:
         "mo_gong":   r.mo_gong,
         "mg_hands":  {str(p): [ser_card(c) for c in cards]
                       for p, cards in r.mo_gong_hands.items()},
+        "all_hands": {str(p): [ser_card(c) for c in cards]
+                      for p, cards in r.all_remaining_hands.items()},
     }
 
 
-def ser_snap_pov(s: GameSnapshot, pov: int) -> dict:
-    """Snapshot with other players' hands masked — only pov seat sees cards."""
+def ser_snap_pov(s: GameSnapshot, pov: int, reveal_seats: set[int] | None = None) -> dict:
+    """Snapshot with other players' hands masked — pov seat and reveal_seats see cards."""
+    reveal = reveal_seats or set()
     return {
-        "hands":  [[ser_card(c) for c in s.hands[p]] if p == pov else []
+        "hands":  [[ser_card(c) for c in s.hands[p]] if p == pov or p in reveal else []
                    for p in range(6)],
         "hcnt":   [len(h) for h in s.hands],   # true hand counts for all seats
         "ts":     s.trick_scores,
@@ -110,7 +113,7 @@ def ser_event(e: GameEvent) -> dict:
     }
 
 
-def ser_event_pov(e: GameEvent, pov: int) -> dict:
+def ser_event_pov(e: GameEvent, pov: int, reveal_seats: set[int] | None = None) -> dict:
     """Event with snapshot masked to pov seat's perspective."""
     return {
         "kind":   e.kind,
@@ -121,5 +124,5 @@ def ser_event_pov(e: GameEvent, pov: int) -> dict:
         "beats":  e.beats_player,
         "winner": e.winner,
         "result": ser_result(e.result),
-        "snap":   ser_snap_pov(e.snapshot, pov),
+        "snap":   ser_snap_pov(e.snapshot, pov, reveal_seats),
     }

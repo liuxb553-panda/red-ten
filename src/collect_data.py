@@ -158,7 +158,7 @@ def _run_outcome_hand(seed: int) -> tuple[np.ndarray, np.ndarray]:
 
     inner    = [RuleBasedPlayer(i) for i in range(6)]
     wrappers = [_OutcomeCollectingPlayer(p) for p in inner]
-    hand     = Hand(wrappers, random.randint(0, 5), GameLogger(verbose=False))
+    hand     = Hand(wrappers, random.randint(0, 5), GameLogger(verbose=False))  # type: ignore[arg-type]
     hand.deal()
     result = hand.play()
     return _label_outcome(wrappers, hand.state, result)
@@ -253,7 +253,7 @@ def _run_eval_hand(seed: int) -> tuple[np.ndarray, np.ndarray]:
 
     inner = [RuleBasedPlayer(i) for i in range(6)]
     recs  = [_EvalRecordingPlayer(p) for p in inner]
-    hand  = Hand(recs, random.randint(0, 5), GameLogger(verbose=False))
+    hand  = Hand(recs, random.randint(0, 5), GameLogger(verbose=False))  # type: ignore[arg-type]
     hand.deal()
     hand.play()
 

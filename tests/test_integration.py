@@ -3,9 +3,7 @@ Integration test: run 100 hands of 6-player RuleBasedPlayer and verify all
 scoring invariants defined in the game rules v2.  Also runs 20 hands of
 SearchPlayer to verify the Tier-2 engine obeys the same invariants.
 """
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+import sys
 import random
 from collections import Counter
 from hand import Hand, RandomPlayer
@@ -120,8 +118,8 @@ def check_finish_order(r: HandResult, errors: list):
     for p in r.finish_order:
         if p not in range(6):
             errors.append(f"Invalid player {p} in finish_order")
-    # In NORMAL play at least 5 should have finished
-    if r.terminal == TerminalKind.NORMAL and len(r.finish_order) < 5:
+    # In NORMAL play, hand ends when one team fully finishes — at least 3 finishers
+    if r.terminal == TerminalKind.NORMAL and len(r.finish_order) < 3:
         errors.append(f"NORMAL hand ended with only {len(r.finish_order)} finishers")
 
 

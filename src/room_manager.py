@@ -26,6 +26,7 @@ import sys as _sys
 import threading
 import time
 import traceback as _tb
+from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 from hand import Player
@@ -39,6 +40,30 @@ if TYPE_CHECKING:
 
 LOGS_DIR = os.path.join(os.path.dirname(__file__), "..", "debug_logs")
 
+# ── AI self-play / battle configuration ─────────────────────────────────────
+
+SPEED_DELAYS = {
+    "normal":  (1.0, 3.0),
+    "fast":    (0.3, 0.5),
+    "instant": (0.0, 0.0),
+}
+
+
+@dataclass
+class SeatConfig:
+    """Per-seat AI configuration for battle mode."""
+    tier: str = "multi-agent"
+    personality: Optional[str] = None  # only used when tier == "multi-agent"
+    model: Optional[str] = None        # only used when tier == "llm"; None = default model
+
+
+@dataclass
+class BattleConfig:
+    """Configuration for an AI-vs-AI spectator battle."""
+    seats: list[SeatConfig] = field(default_factory=lambda: [SeatConfig() for _ in range(6)])
+    speed: str = "normal"
+    num_hands: int = 6
+
 
 class SeatController(Player):
     """
@@ -47,9 +72,11 @@ class SeatController(Player):
     until the client replies with a move index or disconnects.
     """
 
-    def __init__(self, seat_id: int, ai_player: Player):
+    def __init__(self, seat_id: int, ai_player: Player, speed: str = "normal"):
         super().__init__(seat_id)
         self.ai_player = ai_player
+        self._speed = speed
+        self._min_delay, self._max_delay = SPEED_DELAYS.get(speed, (1.0, 3.0))
         self._ws: Optional["WebSocket"] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._move_queue: queue.Queue[Optional[int]] = queue.Queue()
@@ -90,13 +117,16 @@ class SeatController(Player):
 
     def choose_action(self, state: GameState, legal_moves: list[Move]) -> Move:
         if not self.is_human:
-            time.sleep(random.uniform(1.0, 3.0))
+            # The pause imitates thinking; a model-backed seat is slow enough already.
+            own_latency = getattr(self.ai_player, "has_own_latency", False)
+            if not own_latency and (self._min_delay > 0 or self._max_delay > 0):
+                time.sleep(random.uniform(self._min_delay, self._max_delay))
             return self.ai_player.choose_action(state, legal_moves)
 
         # Log the legal-moves set for debugging before asking the human.
         if self._room and self._room._renderer:
             self._room._renderer.log_debug_turn(
-                self.id, [{**ser_move(m), "idx": i} for i, m in enumerate(legal_moves)]
+                self.id, [{**ser_move(m), "idx": i} for i, m in enumerate(legal_moves)]  # type: ignore[dict-item]
             )
 
         # Send legal moves to the human client.
@@ -172,8 +202,9 @@ class GameRoom:
     """
 
     def __init__(self, room_code: str, ai_tier: str = "search",
-                 n_samples: int = 12):
+                 n_samples: int = 12, config: Optional[BattleConfig] = None):
         self.room_code = room_code
+        self.config = config
         self.ai_tier = ai_tier
         self.status = "lobby"   # lobby | running | done
         self.seats: list[SeatController] = []
@@ -181,15 +212,27 @@ class GameRoom:
         self._game_thread: Optional[threading.Thread] = None
         self._continue_event = threading.Event()
 
+        # Spectator support
+        self._spectators: list[tuple] = []  # (WebSocket, event_loop)
+        self._spectator_lock = threading.Lock()
+
         os.makedirs(LOGS_DIR, exist_ok=True)
         self._log_path   = os.path.join(LOGS_DIR, f"{room_code}.jsonl")
         self._flags_path = os.path.join(LOGS_DIR, f"{room_code}_flags.json")
 
-        from session import make_players
-        for i, ai in enumerate(make_players(ai_tier, n_samples=n_samples)):
-            seat = SeatController(i, ai)
-            seat._room = self
-            self.seats.append(seat)
+        if config is not None:
+            from session import make_players_from_config
+            speed = config.speed
+            for i, ai in enumerate(make_players_from_config(config)):
+                seat = SeatController(i, ai, speed=speed)
+                seat._room = self
+                self.seats.append(seat)
+        else:
+            from session import make_players
+            for i, ai in enumerate(make_players(ai_tier, n_samples=n_samples)):
+                seat = SeatController(i, ai)
+                seat._room = self
+                self.seats.append(seat)
 
     # ── broadcasting ──────────────────────────────────────────────────────────
 
@@ -201,23 +244,74 @@ class GameRoom:
             seat.send(data)
 
     def broadcast_event(self, event: "GameEvent") -> None:
-        """Send personalized game event — each seat sees only their own hand."""
-        for i, seat in enumerate(self.seats):
-            if seat.is_human:
-                seat.send({"type": "game_event", "event": ser_event_pov(event, i)})
+        """Send personalized game event — each seat sees only their own hand.
+        When all human players have finished, AI hands are revealed so humans
+        can observe AI decision-making quality."""
+        human_seats = [i for i, s in enumerate(self.seats) if s.is_human]
+        if not human_seats:
+            pass   # don't return — spectators may still need the event
+        else:
+            all_humans_done = all(event.snapshot.finished[p] for p in human_seats)
+            ai_seats = {i for i in range(6) if not self.seats[i].is_human} if all_humans_done else None
+            for i in human_seats:
+                self.seats[i].send({"type": "game_event", "event": ser_event_pov(event, i, ai_seats)})
+
+        # Broadcast full (non-POV) event to spectators
+        self._spectator_send({"type": "game_event", "event": ser_event(event)})
 
     def room_state_msg(self, pov_seat: int) -> dict:
-        return {
+        seats_info = []
+        for i, s in enumerate(self.seats):
+            entry: dict = {"seat": i, "mode": "human" if s.is_human else "ai",
+                           "you": i == pov_seat}
+            if self.config is not None:
+                entry["tier"] = self.config.seats[i].tier
+                entry["personality"] = self.config.seats[i].personality
+                entry["model"] = self.config.seats[i].model
+            seats_info.append(entry)
+
+        result: dict = {
             "type": "room_state",
             "room_code": self.room_code,
             "pov_seat": pov_seat,
-            "seats": [
-                {"seat": i, "mode": "human" if s.is_human else "ai",
-                 "you": i == pov_seat}
-                for i, s in enumerate(self.seats)
-            ],
+            "seats": seats_info,
             "status": self.status,
         }
+        if self.config is not None:
+            result["is_battle"] = True
+            result["speed"] = self.config.speed
+            result["num_hands"] = self.config.num_hands
+        return result
+
+    # ── spectator support ────────────────────────────────────────────────────
+
+    def attach_spectator(self, ws, loop) -> None:
+        """Register a spectator WebSocket connection."""
+        with self._spectator_lock:
+            self._spectators.append((ws, loop))
+
+    def detach_spectator(self, ws) -> None:
+        """Remove a spectator connection."""
+        with self._spectator_lock:
+            self._spectators = [(w, l) for w, l in self._spectators if w is not ws]
+
+    def _spectator_send(self, data: dict) -> None:
+        """Send data to all connected spectators (thread-safe)."""
+        with self._spectator_lock:
+            spectators = list(self._spectators)
+        for ws, loop in spectators:
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_json(data), loop)
+            except Exception:
+                pass
+
+    def _has_spectators(self) -> bool:
+        with self._spectator_lock:
+            return len(self._spectators) > 0
+
+    def _has_human_players(self) -> bool:
+        """True if any seat has a human WebSocket attached."""
+        return any(s.is_human for s in self.seats)
 
     # ── game lifecycle ────────────────────────────────────────────────────────
 
@@ -253,8 +347,14 @@ class GameRoom:
         self._continue_event.set()
 
     def _wait_for_continue(self, timeout: float = 120.0) -> None:
-        """Block until a human signals continue, or timeout fires."""
-        self._continue_event.wait(timeout=timeout)
+        """Block until a human signals continue, or timeout fires.
+        In AI-only (battle/spectator) mode, uses a short auto-continue delay."""
+        if not self._has_human_players():
+            speed = self.config.speed if self.config else "normal"
+            delay = {"normal": 3.0, "fast": 1.5, "instant": 1.0}.get(speed, 3.0)
+            self._continue_event.wait(timeout=delay)
+        else:
+            self._continue_event.wait(timeout=timeout)
         self._continue_event.clear()
 
     def start(self, num_hands: int = 3) -> None:
@@ -270,17 +370,18 @@ class GameRoom:
     def _run(self, num_hands: int) -> None:
         from session import GameSession
         try:
-            GameSession(self.seats, self._renderer,
+            GameSession(self.seats, self._renderer,  # type: ignore[arg-type]
                         continue_cb=self._wait_for_continue).run(num_hands=num_hands)
         except Exception:
             exc = _sys.exc_info()
             try:
+                exc_type = exc[0]
                 crash = {
                     "room_code":   self.room_code,
                     "log_file":    os.path.basename(self._log_path),
                     "timestamp":   datetime.datetime.now().isoformat(timespec="seconds"),
                     "event_count": len(self._renderer.events) if self._renderer else 0,
-                    "exc_type":    exc[0].__name__,
+                    "exc_type":    exc_type.__name__ if exc_type else "Unknown",
                     "exc_message": str(exc[1]),
                     "traceback":   "".join(_tb.format_exception(*exc)),
                 }
@@ -292,8 +393,10 @@ class GameRoom:
             raise
         finally:
             self.status = "done"
+            assert self._renderer is not None
             replay = [ser_event(e) for e in self._renderer.events]
             self.broadcast({"type": "game_over", "replay": replay})
+            self._spectator_send({"type": "game_over", "replay": replay})
 
 
 class RoomManager:
@@ -303,6 +406,12 @@ class RoomManager:
     def create(self, ai_tier: str = "search") -> GameRoom:
         code = self._fresh_code()
         room = GameRoom(code, ai_tier=ai_tier)
+        self._rooms[code] = room
+        return room
+
+    def create_battle(self, config: BattleConfig) -> GameRoom:
+        code = self._fresh_code()
+        room = GameRoom(code, config=config)
         self._rooms[code] = room
         return room
 

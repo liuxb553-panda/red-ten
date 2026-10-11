@@ -68,7 +68,7 @@ def _benchmark(model_path: str, n: int, seed: int, workers: int,
             tier="ml-vs-search", n=n, seed=seed, n_samples=12,
             model_path=model_path, workers=workers
         )
-    return wins / n
+    return wins / n  # type: ignore[no-any-return]
 
 
 def _train_round(data_paths: list[str], model_path: str,

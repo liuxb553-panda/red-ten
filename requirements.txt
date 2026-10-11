@@ -1,0 +1,14 @@
+# Game server
+fastapi
+uvicorn
+websockets
+pydantic
+
+# ML / multi-agent players
+numpy
+torch
+
+# Tests and type checks
+pytest
+hypothesis
+mypy

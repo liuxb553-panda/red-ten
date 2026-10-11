@@ -434,7 +434,7 @@ def draw_controls(surf, buttons: list[Button], playing: bool, speed_idx: int,
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def current_leader(events: list, ev_idx: int) -> Optional[int]:
+def current_leader(events: list[GameEvent], ev_idx: int) -> Optional[int]:
     for i in range(ev_idx, -1, -1):
         ev = events[i]
         if ev.kind in ("hand_start", "deal"):
