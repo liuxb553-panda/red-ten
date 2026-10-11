@@ -1,5 +1,7 @@
 # Red Ten Poker — Claude Code Notes
 
+See @AGENTS.md for working rules.
+
 ## Debug flag inspection
 
 When Henry gives you a flag reference like:
