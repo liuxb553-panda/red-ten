@@ -2,3 +2,5 @@ __pycache__/
 node_modules/
 dist/
 .vite/
+data/training/
+debug_logs/
