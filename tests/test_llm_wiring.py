@@ -78,3 +78,12 @@ def test_engine_seats_still_pause_before_playing(monkeypatch):
 
 def test_seats_with_their_own_latency_do_not_pause(monkeypatch):
     assert _sleep_calls(monkeypatch, _SlowStub(0)) == []
+
+
+def test_home_menu_pages_are_served():
+    """The home page links to /training and /replay; the per-seat AI and
+    model selection lives on /training."""
+    import web_server
+
+    paths = {getattr(r, "path", None) for r in web_server.app.routes}
+    assert {"/play", "/training", "/replay"} <= paths

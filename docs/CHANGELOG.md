@@ -18,6 +18,14 @@
 - LLM 座位不再额外加 1-3 秒的"思考"延迟（模型本身已需数秒）。
 - 每次决策记录在 `debug_logs/llm/<日期>.jsonl`；`scripts/llm_smoke.py` 可不开界面跑一局并统计耗时。
 
+### 修复：首页的"训练"和"回看"按钮打不开
+
+**文件**: `src/web_server.py`
+
+**问题**: 首页按钮跳转到 `/training` 和 `/replay`，但服务器没有这两个路由，返回 404。
+
+**修复**: 新增 `/training`、`/replay` 两个页面路由。
+
 ### 开发环境
 
 - 新增 `requirements.txt`（含 WebSocket 所需的 `websockets`）和 `AGENTS.md`（开发约定）。

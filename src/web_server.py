@@ -59,6 +59,16 @@ def play():
     return FileResponse(os.path.join(WEB_DIR, "play.html"))
 
 
+@app.get("/training")
+def training():
+    return FileResponse(os.path.join(WEB_DIR, "training.html"))
+
+
+@app.get("/replay")
+def replay():
+    return FileResponse(os.path.join(WEB_DIR, "replay.html"))
+
+
 # ── AI replay game ─────────────────────────────────────────────────────────────
 
 @app.get("/api/game")
