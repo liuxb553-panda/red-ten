@@ -177,7 +177,15 @@ def create_battle(req: BattleConfigReq):
 @app.get("/api/tiers")
 def get_tiers():
     from session import AVAILABLE_TIERS, AVAILABLE_PERSONALITIES
-    return {"tiers": AVAILABLE_TIERS, "personalities": AVAILABLE_PERSONALITIES}
+    from llm_client import load_models
+    try:
+        models, default = load_models()
+        llm_models = [{"value": name, "label": f"{name} ({m.model})"}
+                      for name, m in models.items()]
+    except (OSError, ValueError):
+        llm_models, default = [], None
+    return {"tiers": AVAILABLE_TIERS, "personalities": AVAILABLE_PERSONALITIES,
+            "llm_models": llm_models, "llm_default": default}
 
 
 @app.websocket("/ws/{room_code}/spectate")

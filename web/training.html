@@ -235,6 +235,9 @@ async function loadTiers() {
       <select id="seat-${i}-pers" style="margin-top:4px;display:none;">
         ${(data.personalities || []).map(p => `<option value="${p.value}">${p.label}</option>`).join('')}
       </select>
+      <select id="seat-${i}-model" style="margin-top:4px;display:none;">
+        ${(data.llm_models || []).map(m => `<option value="${m.value}"${m.value === data.llm_default ? ' selected' : ''}>${m.label}</option>`).join('')}
+      </select>
     </div>`;
   }
   el.innerHTML = html;
@@ -249,6 +252,7 @@ function onTierChange(i) {
   const tier = document.getElementById(`seat-${i}-tier`).value;
   const pers = document.getElementById(`seat-${i}-pers`);
   pers.style.display = tier === 'multi-agent' ? 'block' : 'none';
+  document.getElementById(`seat-${i}-model`).style.display = tier === 'llm' ? 'block' : 'none';
 }
 
 loadTiers();
@@ -265,7 +269,9 @@ function startBattle() {
   for (let i = 0; i < 6; i++) {
     const tier = document.getElementById(`seat-${i}-tier`).value;
     const pers = document.getElementById(`seat-${i}-pers`);
-    seats.push({ tier, personality: pers.style.display !== 'none' ? pers.value : null });
+    const model = document.getElementById(`seat-${i}-model`);
+    seats.push({ tier, personality: pers.style.display !== 'none' ? pers.value : null,
+                 model: tier === 'llm' && model.value ? model.value : null });
   }
   const speed = document.getElementById('sel-speed').value;
   const numHands = parseInt(document.getElementById('inp-hands').value) || 6;

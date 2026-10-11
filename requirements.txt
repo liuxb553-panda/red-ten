@@ -1,6 +1,7 @@
 # Game server
 fastapi
 uvicorn
+websockets
 pydantic
 
 # ML / multi-agent players

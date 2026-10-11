@@ -64,8 +64,13 @@ def make_players(tier: str, n_samples: int = 12,
     tier="multi-agent-mlp" → 6× MultiAgentPlayer + MLP value network baseline
     tier="multi-agent-mlp-vs-rule" → 3× MultiAgentPlayer(MLP) vs 3× RuleBasedPlayer (P0/2/4 vs P1/3/5)
     tier="personalities" → 1 of each personality (激进/保守/均衡/诡诈/配合/自私)
+    tier="llm"       → 6× LLMPlayer using the default model in config/llm_models.json
+    tier="llm:<name>"→ 6× LLMPlayer using the named model
     """
     from search_player import SearchPlayer
+
+    if tier == "llm" or tier.startswith("llm:"):
+        return [_llm(i, tier.partition(":")[2] or None) for i in range(6)]
 
     def _ml(i):
         from ml_player import MLPlayer
@@ -114,7 +119,8 @@ def make_players(tier: str, n_samples: int = 12,
         f"Unknown tier '{tier}'. "
         "Use 'rule', 'search', 'ml', 'mixed', 'ml-vs-rule', 'ml-vs-search', "
         "'multi-agent', 'multi-agent-vs-rule', "
-        "'multi-agent-mlp', 'multi-agent-mlp-vs-rule', or 'personalities'."
+        "'multi-agent-mlp', 'multi-agent-mlp-vs-rule', 'personalities', "
+        "'llm', or 'llm:<model>'."
     )
 
 
@@ -125,6 +131,8 @@ AVAILABLE_TIERS = [
     {"value": "search",     "label": "Search AI (Tier 2)",  "has_personality": False},
     {"value": "ml",         "label": "ML AI (Tier 3)",      "has_personality": False},
     {"value": "multi-agent","label": "Multi-Agent AI",      "has_personality": True},
+    {"value": "llm",        "label": "LLM AI (本地大模型)",  "has_personality": False,
+     "has_model": True},
 ]
 
 AVAILABLE_PERSONALITIES = [
@@ -135,6 +143,13 @@ AVAILABLE_PERSONALITIES = [
     {"value": "cooperative",  "label": "配合型 Cooperative"},
     {"value": "selfish",      "label": "自私型 Selfish"},
 ]
+
+
+def _llm(player_id: int, model: str | None) -> Player:
+    """An LLM seat using the named model (None = the configured default)."""
+    from llm_client import get_model
+    from llm_player import LLMPlayer
+    return LLMPlayer(player_id, get_model(model))
 
 
 def _resolve_personality(name: str | None):
@@ -168,6 +183,8 @@ def make_players_from_config(config) -> list[Player]:
         elif tier == "multi-agent":
             from brain import MultiAgentPlayer
             players.append(MultiAgentPlayer(i, _resolve_personality(seat_cfg.personality)))
+        elif tier == "llm":
+            players.append(_llm(i, seat_cfg.model))
         else:
             players.append(SearchPlayer(i, n_samples=12))
     assert len(players) == 6

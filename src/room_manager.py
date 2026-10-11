@@ -54,6 +54,7 @@ class SeatConfig:
     """Per-seat AI configuration for battle mode."""
     tier: str = "multi-agent"
     personality: Optional[str] = None  # only used when tier == "multi-agent"
+    model: Optional[str] = None        # only used when tier == "llm"; None = default model
 
 
 @dataclass
@@ -116,7 +117,9 @@ class SeatController(Player):
 
     def choose_action(self, state: GameState, legal_moves: list[Move]) -> Move:
         if not self.is_human:
-            if self._min_delay > 0 or self._max_delay > 0:
+            # The pause imitates thinking; a model-backed seat is slow enough already.
+            own_latency = getattr(self.ai_player, "has_own_latency", False)
+            if not own_latency and (self._min_delay > 0 or self._max_delay > 0):
                 time.sleep(random.uniform(self._min_delay, self._max_delay))
             return self.ai_player.choose_action(state, legal_moves)
 
@@ -264,6 +267,7 @@ class GameRoom:
             if self.config is not None:
                 entry["tier"] = self.config.seats[i].tier
                 entry["personality"] = self.config.seats[i].personality
+                entry["model"] = self.config.seats[i].model
             seats_info.append(entry)
 
         result: dict = {

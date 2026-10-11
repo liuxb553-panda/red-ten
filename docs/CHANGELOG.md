@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-11
+
+### LLM AI 座位（本地大模型出牌）
+
+**文件**: `src/llm_client.py`, `src/llm_view.py`, `src/llm_player.py`, `config/llm_models.json`, `skills/*.zh.md`, `src/session.py`, `src/room_manager.py`, `src/web_server.py`, `web/play.html`, `web/training.html`
+
+**功能**: 新增 AI 层级 `llm`，由本地大模型（OpenAI 兼容接口）决定出牌。
+- 程序把所有合法出牌编号列出（只差花色的出法合并，含♥10的出法单独列出），连同牌桌情况发给模型，模型回答编号。
+- 模型只能看到自己的手牌和公开信息（已出的牌、各家剩余张数、已亮的红十、得分），看不到别人的手牌和真实阵营。
+- 回答无效时重试一次，仍无效或模型服务出错时，该回合改由规则型 AI 出牌，牌局不会卡住。
+- 模型地址和名称在 `config/llm_models.json` 中配置（目前有 Qwen3.5-9B 和 gemma4 e4b 两项）。
+- 规则摘要和打牌策略写在 `skills/rules_brief.zh.md`、`skills/strategy.zh.md`，用中文书写，可直接修改来调整 AI 打法。
+- `/play` 大厅的 AI 选项新增 "LLM AI"；`/training` 每个座位可选 "LLM AI" 并指定模型。
+- LLM 座位不再额外加 1-3 秒的"思考"延迟（模型本身已需数秒）。
+- 每次决策记录在 `debug_logs/llm/<日期>.jsonl`；`scripts/llm_smoke.py` 可不开界面跑一局并统计耗时。
+
+### 开发环境
+
+- 新增 `requirements.txt`（含 WebSocket 所需的 `websockets`）和 `AGENTS.md`（开发约定）。
+
+---
+
 ## 2026-05-09
 
 ### 多智能体 AI 决策系统 (Phase 1-7)

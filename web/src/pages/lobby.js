@@ -4,7 +4,7 @@ import { get } from '/src/lib/api.js';
 let _onJoinRoom = null;
 let _refreshTimer = null;
 
-const tierName = { rule: 'Rule AI', search: 'Search AI', ml: 'ML AI' };
+const tierName = { rule: 'Rule AI', search: 'Search AI', ml: 'ML AI', llm: 'LLM AI' };
 
 export function initLobby(onJoinRoom) {
   _onJoinRoom = onJoinRoom;

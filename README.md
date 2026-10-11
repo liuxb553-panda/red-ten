@@ -259,6 +259,42 @@ Output shows the legal moves offered at that moment, the human player's full han
 
 ---
 
+## LLM AI seat (local language model)
+
+An AI seat can be played by a small local language model. The game shows the
+model every legal play as a numbered list plus a description of the table, and
+plays the number it answers with. If the model is slow, down, or answers
+nonsense, that turn is played by the rule-based AI instead, so a game never
+stalls.
+
+**1. Start a model server** that speaks the OpenAI chat API. Any of
+`mlx_lm.server`, LM Studio, Ollama or llama.cpp works, for example:
+
+```bash
+mlx_lm.server --model mlx-community/Qwen3.5-9B-4bit --port 8080
+```
+
+**2. Tell the game where it is** in `config/llm_models.json`: `base_url`, the
+`model` name as the server knows it, and optional `extra_body` fields sent with
+every request (Qwen needs its "thinking" switched off there). Set the
+`REDTEN_LLM_CONFIG` environment variable to use a different file.
+
+**3. Pick it in the UI**: on `/play` choose "LLM AI" for the empty seats, or on
+`/training` choose "LLM AI" and a model per seat.
+
+**Changing how it plays**: edit `skills/strategy.zh.md` (strategy advice) and
+`skills/rules_brief.zh.md` (rules summary). They are plain Chinese text sent to
+the model at the start of every turn; restart the server after editing.
+
+**Checking it**: `python scripts/llm_smoke.py --verbose` plays one hand without
+the UI and prints each decision, the model's stated reason, and timings. Every
+decision is also appended to `debug_logs/llm/<date>.jsonl`.
+
+With Qwen3.5-9B on an M4 laptop a decision takes about 4 seconds. The server
+answers one request at a time, so one or two LLM seats per game is comfortable.
+
+---
+
 ## Testing
 
 ### Run tests
